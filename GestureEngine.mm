@@ -83,50 +83,62 @@
     
     if (indexTip.confidence < 0.5 || thumbTip.confidence < 0.5) return;
 
-    // 1. CALCULATE MIDPOINT (Prevents shifting during pinch)
+    // 1. Calculate Midpoint
     CGFloat midX = (indexTip.x + thumbTip.x) / 2.0;
     CGFloat midY = (indexTip.y + thumbTip.y) / 2.0;
 
-    // 2. PINCH DETECTION
-    CGFloat dist = hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
-    BOOL isPinchingNow = (dist < 0.05); // Adjust sensitivity here
+    // 2. EDGE-TO-EDGE MAPPING LOGIC
+    // The camera center is 0.5. We subtract 0.5 to center the coordinates at 0.0.
+    // Then we multiply by a 'gain' factor (e.g., 1.5) to stretch the reach.
+    CGFloat gain = 1.6; 
+    CGFloat mappedX = (midX - 0.5) * gain + 0.5;
+    CGFloat mappedY = (midY - 0.5) * gain + 0.5;
 
-    // 3. SMOOTHING & MAPPING
-    CGFloat targetX = midX * self.screenSize.width;
-    CGFloat targetY = (1.0 - midY) * self.screenSize.height;
+    // Clamp values between 0.0 and 1.0 so the mouse doesn't disappear
+    mappedX = fmax(0.0, fmin(1.0, mappedX));
+    mappedY = fmax(0.0, fmin(1.0, mappedY));
 
+    // 3. Mapping to Screen Size
+    CGFloat targetX = mappedX * self.screenSize.width;
+    CGFloat targetY = (1.0 - mappedY) * self.screenSize.height;
+
+    // 4. Smoothing (Exponential Moving Average)
     if (!self.hasFirstPos) {
         self.lastMousePos = CGPointMake(targetX, targetY);
         self.hasFirstPos = YES;
     }
 
-    // High smoothing for the dot, low latency for the click
-    CGFloat alpha = 0.25; 
+    CGFloat alpha = 0.30; // Increased slightly for better responsiveness with high gain
     CGPoint smoothedPos = CGPointMake(
         (targetX * alpha) + (self.lastMousePos.x * (1.0 - alpha)),
         (targetY * alpha) + (self.lastMousePos.y * (1.0 - alpha))
     );
     self.lastMousePos = smoothedPos;
 
-    // 4. GENERATE SYSTEM CLICKS
+    // 5. Pinch & Click Logic
+    CGFloat dist = hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
+    BOOL isPinchingNow = (dist < 0.05);
+
     CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
-    if (isPinchingNow && !self.isClicking) {
-        self.isClicking = YES;
-        CGEventRef down = CGEventCreateMouseEvent(src, kCGEventLeftMouseDown, smoothedPos, kCGMouseButtonLeft);
-        CGEventPost(kCGHIDEventTap, down);
-        CFRelease(down);
-    } else if (!isPinchingNow && self.isClicking) {
-        self.isClicking = NO;
-        CGEventRef up = CGEventCreateMouseEvent(src, kCGEventLeftMouseUp, smoothedPos, kCGMouseButtonLeft);
-        CGEventPost(kCGHIDEventTap, up);
-        CFRelease(up);
-    } else {
-        CGEventType type = self.isClicking ? kCGEventLeftMouseDragged : kCGEventMouseMoved;
-        CGEventRef move = CGEventCreateMouseEvent(src, type, smoothedPos, kCGMouseButtonLeft);
-        CGEventPost(kCGHIDEventTap, move);
-        CFRelease(move);
+    if (src) {
+        if (isPinchingNow && !self.isClicking) {
+            self.isClicking = YES;
+            CGEventRef down = CGEventCreateMouseEvent(src, kCGEventLeftMouseDown, smoothedPos, kCGMouseButtonLeft);
+            CGEventPost(kCGHIDEventTap, down);
+            CFRelease(down);
+        } else if (!isPinchingNow && self.isClicking) {
+            self.isClicking = NO;
+            CGEventRef up = CGEventCreateMouseEvent(src, kCGEventLeftMouseUp, smoothedPos, kCGMouseButtonLeft);
+            CGEventPost(kCGHIDEventTap, up);
+            CFRelease(up);
+        } else {
+            CGEventType type = self.isClicking ? kCGEventLeftMouseDragged : kCGEventMouseMoved;
+            CGEventRef move = CGEventCreateMouseEvent(src, type, smoothedPos, kCGMouseButtonLeft);
+            CGEventPost(kCGHIDEventTap, move);
+            CFRelease(move);
+        }
+        CFRelease(src);
     }
-    if(src) CFRelease(src);
 }
 
 - (void)stop {
