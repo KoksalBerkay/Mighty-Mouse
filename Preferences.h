@@ -15,6 +15,7 @@ struct GestureSettings {
     double dragMovementThreshold;
 
     double scrollSpeed;
+    double scrollSmoothing;
     double scrollActivationDelay;
     double scrollDeadzone;
     bool invertScroll;
@@ -34,4 +35,3 @@ void SaveGestureSettings(const GestureSettings &settings);
 
 // Restores only Mighty Mouse's own preference keys.
 void ResetGestureSettings();
-

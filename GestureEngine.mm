@@ -123,6 +123,7 @@ static int FindVitureProductID() {
 @property (nonatomic, assign) BOOL scrollActive;
 @property (nonatomic, assign) CFAbsoluteTime scrollStartTime;
 @property (nonatomic, assign) CGPoint lastScrollPoint;
+@property (nonatomic, assign) BOOL hasScrollPoint;
 @property (nonatomic, assign) CGFloat scrollRemainder;
 @end
 
@@ -144,6 +145,7 @@ static int FindVitureProductID() {
         _scrollActive = NO;
         _scrollStartTime = 0.0;
         _lastScrollPoint = CGPointZero;
+        _hasScrollPoint = NO;
         _scrollRemainder = 0.0;
         _screenSize = CGDisplayBounds(CGMainDisplayID()).size;
     }
@@ -391,17 +393,35 @@ static int FindVitureProductID() {
         if (!scrollPoseNow) {
             self.scrollActive = NO;
             self.scrollStartTime = 0.0;
+            self.hasScrollPoint = NO;
             self.scrollRemainder = 0.0;
             return;
         }
-        CGPoint scrollPoint = CGPointMake((indexTip.location.x + middleTip.location.x) / 2.0,
-                                           (indexTip.location.y + middleTip.location.y) / 2.0);
-        CGFloat deltaY = scrollPoint.y - self.lastScrollPoint.y;
-        self.lastScrollPoint = scrollPoint;
-        // The dead zone filters camera noise; the scale turns normalized hand
-        // displacement into comfortable line-based macOS scrolling.
-        self.scrollRemainder += deltaY * 70.0;
-        int scrollLines = (int)self.scrollRemainder;
+        CGPoint rawScrollPoint = CGPointMake((indexTip.location.x + middleTip.location.x) / 2.0,
+                                              (indexTip.location.y + middleTip.location.y) / 2.0);
+        if (!self.hasScrollPoint) {
+            self.lastScrollPoint = rawScrollPoint;
+            self.hasScrollPoint = YES;
+            return;
+        }
+        CGFloat scrollAlpha = settings.scrollSmoothing;
+        CGPoint filteredScrollPoint = CGPointMake(
+            self.lastScrollPoint.x + (rawScrollPoint.x - self.lastScrollPoint.x) * scrollAlpha,
+            self.lastScrollPoint.y + (rawScrollPoint.y - self.lastScrollPoint.y) * scrollAlpha);
+        CGFloat deltaY = filteredScrollPoint.y - self.lastScrollPoint.y;
+        self.lastScrollPoint = filteredScrollPoint;
+
+        CGFloat deadzone = settings.scrollDeadzone;
+        CGFloat magnitude = fabs(deltaY);
+        if (magnitude <= deadzone) return;
+        CGFloat usableDelta = copysign(magnitude - deadzone, deltaY);
+
+        // A modest velocity boost makes larger intentional movements useful
+        // without making the slow end of the range jumpy.
+        CGFloat acceleration = 1.0 + fmin(0.75, magnitude * 18.0);
+        CGFloat direction = settings.invertScroll ? -1.0 : 1.0;
+        self.scrollRemainder += usableDelta * 70.0 * settings.scrollSpeed * acceleration * direction;
+        int scrollLines = (int)fmax(-6.0, fmin(6.0, self.scrollRemainder));
         if (scrollLines != 0) {
             self.scrollRemainder -= scrollLines;
             CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
@@ -424,14 +444,17 @@ static int FindVitureProductID() {
         if (self.scrollStartTime == 0.0) {
             self.scrollStartTime = now;
             self.lastScrollPoint = scrollPoint;
+            self.hasScrollPoint = YES;
             self.scrollRemainder = 0.0;
-        } else if (now - self.scrollStartTime >= 0.16) {
+        } else if (now - self.scrollStartTime >= settings.scrollActivationDelay) {
             self.scrollActive = YES;
             self.lastScrollPoint = scrollPoint;
+            self.hasScrollPoint = YES;
         }
         return;
     }
     self.scrollStartTime = 0.0;
+    self.hasScrollPoint = NO;
 
     // Pinch is a latched interaction. The pointer is held at its anchor while
     // the pinch settles. A short, stable pinch followed by release is a click;
@@ -518,6 +541,7 @@ static int FindVitureProductID() {
     self.dragActive = NO;
     self.scrollActive = NO;
     self.scrollStartTime = 0.0;
+    self.hasScrollPoint = NO;
     self.scrollRemainder = 0.0;
     self.lastHandSeenTime = 0.0;
     self.hasFirstPos = NO;
