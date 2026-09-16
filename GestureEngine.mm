@@ -139,6 +139,7 @@ static int FindVitureProductID() {
 
 @interface HandTracker : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
 @property (nonatomic, strong) AVCaptureSession *session;
+@property (nonatomic, strong) VNDetectHumanHandPoseRequest *handPoseRequest;
 @property (nonatomic, assign) BOOL isClicking;
 @property (nonatomic, assign) CGSize screenSize;
 @property (nonatomic, assign) CGPoint lastMousePos;
@@ -163,6 +164,8 @@ static int FindVitureProductID() {
     self = [super init];
     if (self) {
         _isClicking = NO;
+        _handPoseRequest = [[VNDetectHumanHandPoseRequest alloc] init];
+        _handPoseRequest.maximumHandCount = 1;
         _hasFirstPos = NO;
         _carinaHandle = NULL;
         _usingCarina = NO;
@@ -298,6 +301,7 @@ static int FindVitureProductID() {
     [self.session addInput:input];
 
     AVCaptureVideoDataOutput *output = [[AVCaptureVideoDataOutput alloc] init];
+    output.alwaysDiscardsLateVideoFrames = YES;
     dispatch_queue_t videoQueue = dispatch_queue_create("com.viture.handtracking", DISPATCH_QUEUE_SERIAL);
     [output setSampleBufferDelegate:self queue:videoQueue];
     if (![self.session canAddOutput:output]) {
@@ -340,14 +344,14 @@ static int FindVitureProductID() {
 - (void)processPixelBuffer:(CVPixelBufferRef)pixelBuffer {
     if (!pixelBuffer) return;
     VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCVPixelBuffer:pixelBuffer options:@{}];
-    VNDetectHumanHandPoseRequest *request = [[VNDetectHumanHandPoseRequest alloc] init];
 
     NSError *visionError = nil;
-    [handler performRequests:@[request] error:&visionError];
+    [handler performRequests:@[self.handPoseRequest] error:&visionError];
+    if (visionError) return;
     
-    if (request.results.count > 0) {
+    if (self.handPoseRequest.results.count > 0) {
         self.lastHandSeenTime = CFAbsoluteTimeGetCurrent();
-        [self processHand:request.results.firstObject];
+        [self processHand:self.handPoseRequest.results.firstObject];
     } else if (self.pinchState != kPinchIdle || self.scrollInterpreter->IsEngaged()) {
         // Vision occasionally loses the hand for a few frames. Do not leave
         // a drag pressed or a scroll mode latched when that happens.
