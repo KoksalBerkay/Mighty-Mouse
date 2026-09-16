@@ -67,6 +67,14 @@ static void TestScrollPoseClassifierRejectsOpenHand() {
            "open hand should not suppress normal cursor movement");
 }
 
+static void TestScrollPoseClassifierDoesNotBlockBorderlinePointing() {
+    ScrollPoseClassifier classifier;
+    Expect(!classifier.Update(PoseEvidence(0.90, 0.40, 0.18, 0.18), 0.00, 0.50),
+           "borderline pointing should not confirm as a two-finger pose");
+    Expect(!classifier.IsIntentLikely(),
+           "borderline pointing should not make the cursor feel laggy");
+}
+
 static void TestScrollPoseClassifierReleasesWithHysteresis() {
     ScrollPoseClassifier classifier;
     classifier.Update(PoseEvidence(0.92, 0.90, 0.82, 0.80), 0.00, 0.50);
@@ -139,6 +147,7 @@ static void TestClutchCanBeDisabled() {
 int main() {
     TestScrollPoseClassifierUsesStableEvidence();
     TestScrollPoseClassifierRejectsOpenHand();
+    TestScrollPoseClassifierDoesNotBlockBorderlinePointing();
     TestScrollPoseClassifierReleasesWithHysteresis();
     TestActivationAndNoise();
     TestClutchRebasesAfterBoundary();

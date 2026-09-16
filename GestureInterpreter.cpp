@@ -36,7 +36,12 @@ bool ScrollPoseClassifier::Update(const ScrollPoseEvidence &evidence,
     double normalizedSensitivity = Clamp(sensitivity, 0.0, 1.0);
     double acquireThreshold = 0.44 + normalizedSensitivity * 0.12;
     double releaseThreshold = acquireThreshold - 0.16;
-    intentThreshold_ = acquireThreshold - 0.20;
+    // Cursor suppression must be more conservative than scroll acquisition.
+    // A weak middle-finger false positive may be enough to build evidence,
+    // but it should not pause ordinary pointing until the pose is genuinely
+    // likely. Keep this close to the acquisition threshold while retaining a
+    // small cushion for the confirmation dwell.
+    intentThreshold_ = std::max(0.40, acquireThreshold - 0.08);
     bool enoughFingerEvidence = pairScore >= 0.34 && foldScore >= 0.12;
     intentLikely_ = enoughFingerEvidence && score_ >= intentThreshold_;
 
