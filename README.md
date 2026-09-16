@@ -42,7 +42,7 @@ To function, macOS requires you to grant the following permissions in **System S
 - **Move:** Hold up only your index finger and move it naturally.
 - **Click:** Bring thumb and index together, wait for the pinch to arm, then release. Mighty Mouse sends the click at the frozen cursor position, so the release does not need to be precisely timed.
 - **Drag:** Keep the pinch held beyond the drag hold duration and move deliberately past the movement threshold. Release the pinch to stop dragging.
-- **Scroll:** Hold index and middle fingers up with ring and little fingers curled; wait for the short activation dwell, then move the two-finger pair vertically. The pose accepts rotated or diagonal hands, while noise filtering and direction hysteresis reduce jitter.
+- **Scroll:** Hold index and middle fingers up with ring and little fingers curled; wait for the short activation dwell, then move the two-finger pair vertically. The pose accepts rotated or diagonal hands. Finger geometry is scored continuously, so small Vision jitters no longer immediately cancel scrolling or send cursor movement instead.
 - **Scroll reposition:** While scrolling, pinch to engage the clutch. Move your hand to a new position without generating reverse scrolling, then return to the two-finger pose to establish a fresh baseline.
 - **Pause:** Choose **Pause Tracking** from the hand-icon menu when you need normal mouse control.
 
@@ -56,6 +56,7 @@ Open the hand-icon menu in the macOS menu bar. **Quick Settings** provides one-c
 - Drag hold duration and movement threshold.
 - Scroll speed, acceleration, smoothing, activation delay, and noise filter.
 - Scroll clutch enable/disable.
+- Two-finger pose sensitivity: Easy accepts more borderline finger shapes; Strict requires a clearer index-and-middle pose. Balanced is recommended.
 - Natural or reversed scroll direction.
 
 Every change applies immediately and is saved automatically for the next launch. Choose **Restore Default Settings** from either the menu or the settings window to return to the recommended defaults.
