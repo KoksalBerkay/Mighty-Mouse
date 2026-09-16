@@ -24,19 +24,23 @@ enum {
     kQuickCursorSmoothing = 2,
     kQuickScrollSpeed = 3,
     kQuickScrollDirection = 4,
+    kQuickScrollAcceleration = 5,
 };
 
 enum {
     kSettingCursorGain = 101,
     kSettingCursorSmoothing = 102,
-    kSettingPinchSensitivity = 103,
-    kSettingPinchStabilization = 104,
-    kSettingDragHold = 105,
-    kSettingDragMovement = 106,
-    kSettingScrollSpeed = 107,
-    kSettingScrollSmoothing = 108,
-    kSettingScrollActivation = 109,
-    kSettingScrollDeadzone = 110,
+    kSettingCursorDeadzone = 103,
+    kSettingCursorMaxStep = 104,
+    kSettingPinchSensitivity = 105,
+    kSettingPinchStabilization = 106,
+    kSettingDragHold = 107,
+    kSettingDragMovement = 108,
+    kSettingScrollSpeed = 109,
+    kSettingScrollAcceleration = 110,
+    kSettingScrollSmoothing = 111,
+    kSettingScrollActivation = 112,
+    kSettingScrollDeadzone = 113,
 };
 
 @interface MightyMouseAppDelegate : NSObject <NSApplicationDelegate, NSMenuDelegate>
@@ -47,11 +51,14 @@ enum {
 @property (nonatomic, strong) NSWindow *settingsWindow;
 @property (nonatomic, strong) NSSlider *cursorGainSlider;
 @property (nonatomic, strong) NSSlider *cursorSmoothingSlider;
+@property (nonatomic, strong) NSSlider *cursorDeadzoneSlider;
+@property (nonatomic, strong) NSSlider *cursorMaxStepSlider;
 @property (nonatomic, strong) NSSlider *pinchSensitivitySlider;
 @property (nonatomic, strong) NSSlider *pinchStabilizationSlider;
 @property (nonatomic, strong) NSSlider *dragHoldSlider;
 @property (nonatomic, strong) NSSlider *dragMovementSlider;
 @property (nonatomic, strong) NSSlider *scrollSpeedSlider;
+@property (nonatomic, strong) NSSlider *scrollAccelerationSlider;
 @property (nonatomic, strong) NSSlider *scrollSmoothingSlider;
 @property (nonatomic, strong) NSSlider *scrollActivationSlider;
 @property (nonatomic, strong) NSSlider *scrollDeadzoneSlider;
@@ -60,6 +67,7 @@ enum {
 @property (nonatomic, strong) NSArray *cursorGainPresetItems;
 @property (nonatomic, strong) NSArray *cursorSmoothingPresetItems;
 @property (nonatomic, strong) NSArray *scrollSpeedPresetItems;
+@property (nonatomic, strong) NSArray *scrollAccelerationPresetItems;
 @property (nonatomic, strong) NSArray *scrollDirectionPresetItems;
 @end
 
@@ -131,6 +139,11 @@ enum {
                                                       kind:kQuickScrollSpeed
                                                     values:@[@0.60, @1.00, @1.50, @2.20]
                                                     labels:@[@"Slow", @"Balanced", @"Fast", @"Very Fast"]];
+    self.scrollAccelerationPresetItems = [self addPresetSubmenuTo:quickMenu
+                                                           title:@"Scroll Acceleration"
+                                                            kind:kQuickScrollAcceleration
+                                                          values:@[@0.00, @0.15, @0.35]
+                                                          labels:@[@"Off", @"Mild", @"Strong"]];
     self.scrollDirectionPresetItems = [self addPresetSubmenuTo:quickMenu
                                                           title:@"Scroll Direction"
                                                            kind:kQuickScrollDirection
@@ -242,6 +255,10 @@ enum {
         item.state = fabs([item.representedObject doubleValue] - settings.scrollSpeed) < 0.001
             ? NSControlStateValueOn : NSControlStateValueOff;
     }
+    for (NSMenuItem *item in self.scrollAccelerationPresetItems) {
+        item.state = fabs([item.representedObject doubleValue] - settings.scrollAcceleration) < 0.001
+            ? NSControlStateValueOn : NSControlStateValueOff;
+    }
     for (NSMenuItem *item in self.scrollDirectionPresetItems) {
         item.state = [item.representedObject boolValue] == settings.invertScroll
             ? NSControlStateValueOn : NSControlStateValueOff;
@@ -261,6 +278,9 @@ enum {
         case kQuickScrollSpeed:
             settings.scrollSpeed = value;
             break;
+        case kQuickScrollAcceleration:
+            settings.scrollAcceleration = value;
+            break;
         case kQuickScrollDirection:
             settings.invertScroll = [sender.representedObject boolValue];
             break;
@@ -278,6 +298,10 @@ enum {
             if (settings.cursorSmoothing < 0.22) return @"Steady";
             if (settings.cursorSmoothing < 0.36) return @"Balanced";
             return @"Responsive";
+        case kSettingCursorDeadzone:
+            return [NSString stringWithFormat:@"%.3f", settings.cursorDeadzone];
+        case kSettingCursorMaxStep:
+            return [NSString stringWithFormat:@"%.0f px", settings.cursorMaxStep];
         case kSettingPinchSensitivity:
             if (settings.pinchEnterRatio < 0.24) return @"Firm";
             if (settings.pinchEnterRatio < 0.32) return @"Balanced";
@@ -290,6 +314,10 @@ enum {
             return [NSString stringWithFormat:@"%.3f", settings.dragMovementThreshold];
         case kSettingScrollSpeed:
             return [NSString stringWithFormat:@"%.2fx", settings.scrollSpeed];
+        case kSettingScrollAcceleration:
+            if (settings.scrollAcceleration < 0.10) return @"Off";
+            if (settings.scrollAcceleration < 0.28) return @"Mild";
+            return @"Strong";
         case kSettingScrollSmoothing:
             if (settings.scrollSmoothing < 0.24) return @"Steady";
             if (settings.scrollSmoothing < 0.44) return @"Balanced";
@@ -352,7 +380,7 @@ enum {
 
 - (void)buildSettingsWindow {
     self.settingValueLabels = [NSMutableDictionary dictionary];
-    NSRect frame = NSMakeRect(0.0, 0.0, 520.0, 720.0);
+    NSRect frame = NSMakeRect(0.0, 0.0, 520.0, 760.0);
     self.settingsWindow = [[NSWindow alloc]
         initWithContentRect:frame
                   styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
@@ -364,11 +392,11 @@ enum {
     NSView *content = self.settingsWindow.contentView;
     NSTextField *description = [NSTextField labelWithString:
         @"Changes apply immediately and are saved automatically."];
-    description.frame = NSMakeRect(24.0, 674.0, 470.0, 24.0);
+    description.frame = NSMakeRect(24.0, 714.0, 470.0, 24.0);
     description.textColor = [NSColor secondaryLabelColor];
     [content addSubview:description];
 
-    [self addSectionTitleToView:content title:@"Cursor" y:634.0];
+    [self addSectionTitleToView:content title:@"Cursor" y:674.0];
     GestureSettings settings = CurrentGestureSettings();
     self.cursorGainSlider = [self addSliderRowToView:content
                                                title:@"Sensitivity"
@@ -376,90 +404,111 @@ enum {
                                               minimum:1.0
                                               maximum:2.6
                                                 value:settings.cursorGain
-                                                    y:598.0];
+                                                    y:638.0];
     self.cursorSmoothingSlider = [self addSliderRowToView:content
                                                     title:@"Response"
                                                        tag:kSettingCursorSmoothing
                                                    minimum:0.12
                                                    maximum:0.55
                                                      value:settings.cursorSmoothing
-                                                         y:562.0];
+                                                         y:602.0];
+    self.cursorDeadzoneSlider = [self addSliderRowToView:content
+                                                   title:@"Movement deadzone"
+                                                      tag:kSettingCursorDeadzone
+                                                  minimum:0.0
+                                                  maximum:0.025
+                                                    value:settings.cursorDeadzone
+                                                        y:566.0];
+    self.cursorMaxStepSlider = [self addSliderRowToView:content
+                                                 title:@"Maximum step"
+                                                    tag:kSettingCursorMaxStep
+                                                minimum:40.0
+                                                maximum:600.0
+                                                  value:settings.cursorMaxStep
+                                                      y:530.0];
 
-    [self addSectionTitleToView:content title:@"Click and Drag" y:516.0];
+    [self addSectionTitleToView:content title:@"Click and Drag" y:494.0];
     self.pinchSensitivitySlider = [self addSliderRowToView:content
                                                       title:@"Pinch sensitivity"
                                                          tag:kSettingPinchSensitivity
                                                      minimum:0.18
                                                      maximum:0.40
                                                        value:settings.pinchEnterRatio
-                                                           y:480.0];
+                                                           y:458.0];
     self.pinchStabilizationSlider = [self addSliderRowToView:content
                                                         title:@"Pinch stabilization"
                                                            tag:kSettingPinchStabilization
                                                        minimum:0.04
                                                        maximum:0.25
                                                          value:settings.pinchActivationDelay
-                                                             y:444.0];
+                                                             y:422.0];
     self.dragHoldSlider = [self addSliderRowToView:content
                                              title:@"Drag hold"
                                                 tag:kSettingDragHold
                                             minimum:0.20
                                             maximum:0.90
                                               value:settings.dragHoldDuration
-                                                  y:408.0];
+                                                  y:386.0];
     self.dragMovementSlider = [self addSliderRowToView:content
                                                  title:@"Drag movement"
                                                     tag:kSettingDragMovement
                                                 minimum:0.018
                                                 maximum:0.12
                                                   value:settings.dragMovementThreshold
-                                                      y:372.0];
+                                                      y:350.0];
 
-    [self addSectionTitleToView:content title:@"Scrolling" y:326.0];
+    [self addSectionTitleToView:content title:@"Scrolling" y:314.0];
     self.scrollSpeedSlider = [self addSliderRowToView:content
                                                 title:@"Speed"
                                                    tag:kSettingScrollSpeed
                                                minimum:0.25
                                                maximum:3.0
                                                  value:settings.scrollSpeed
-                                                     y:290.0];
+                                                     y:278.0];
+    self.scrollAccelerationSlider = [self addSliderRowToView:content
+                                                       title:@"Acceleration"
+                                                          tag:kSettingScrollAcceleration
+                                                      minimum:0.0
+                                                      maximum:1.0
+                                                        value:settings.scrollAcceleration
+                                                            y:242.0];
     self.scrollSmoothingSlider = [self addSliderRowToView:content
                                                     title:@"Response"
                                                        tag:kSettingScrollSmoothing
                                                    minimum:0.12
                                                    maximum:0.65
                                                      value:settings.scrollSmoothing
-                                                         y:254.0];
+                                                         y:206.0];
     self.scrollActivationSlider = [self addSliderRowToView:content
                                                      title:@"Activation delay"
                                                         tag:kSettingScrollActivation
-                                                    minimum:0.10
-                                                    maximum:0.50
-                                                      value:settings.scrollActivationDelay
-                                                          y:218.0];
+                                                      minimum:0.10
+                                                      maximum:0.50
+                                                        value:settings.scrollActivationDelay
+                                                          y:170.0];
     self.scrollDeadzoneSlider = [self addSliderRowToView:content
                                                   title:@"Noise filter"
                                                      tag:kSettingScrollDeadzone
                                                  minimum:0.004
                                                  maximum:0.05
                                                    value:settings.scrollDeadzone
-                                                       y:182.0];
+                                                       y:134.0];
 
     self.invertScrollButton = [NSButton checkboxWithTitle:@"Reverse scroll direction"
                                                     target:self
                                                     action:@selector(settingsChanged:)];
-    self.invertScrollButton.frame = NSMakeRect(24.0, 138.0, 250.0, 24.0);
+    self.invertScrollButton.frame = NSMakeRect(24.0, 90.0, 250.0, 24.0);
     [content addSubview:self.invertScrollButton];
 
     NSButton *reset = [NSButton buttonWithTitle:@"Restore Defaults"
                                           target:self
                                           action:@selector(resetSettings:)];
-    reset.frame = NSMakeRect(24.0, 84.0, 150.0, 32.0);
+    reset.frame = NSMakeRect(24.0, 40.0, 150.0, 32.0);
     [content addSubview:reset];
 
     NSTextField *help = [NSTextField labelWithString:
         @"Pinch and release to click. Hold and move deliberately to drag."];
-    help.frame = NSMakeRect(190.0, 88.0, 300.0, 24.0);
+    help.frame = NSMakeRect(190.0, 44.0, 300.0, 24.0);
     help.textColor = [NSColor secondaryLabelColor];
     [content addSubview:help];
     [self refreshSettingsControls];
@@ -470,11 +519,14 @@ enum {
     GestureSettings settings = CurrentGestureSettings();
     self.cursorGainSlider.doubleValue = settings.cursorGain;
     self.cursorSmoothingSlider.doubleValue = settings.cursorSmoothing;
+    self.cursorDeadzoneSlider.doubleValue = settings.cursorDeadzone;
+    self.cursorMaxStepSlider.doubleValue = settings.cursorMaxStep;
     self.pinchSensitivitySlider.doubleValue = settings.pinchEnterRatio;
     self.pinchStabilizationSlider.doubleValue = settings.pinchActivationDelay;
     self.dragHoldSlider.doubleValue = settings.dragHoldDuration;
     self.dragMovementSlider.doubleValue = settings.dragMovementThreshold;
     self.scrollSpeedSlider.doubleValue = settings.scrollSpeed;
+    self.scrollAccelerationSlider.doubleValue = settings.scrollAcceleration;
     self.scrollSmoothingSlider.doubleValue = settings.scrollSmoothing;
     self.scrollActivationSlider.doubleValue = settings.scrollActivationDelay;
     self.scrollDeadzoneSlider.doubleValue = settings.scrollDeadzone;
@@ -493,6 +545,12 @@ enum {
         case kSettingCursorSmoothing:
             settings.cursorSmoothing = self.cursorSmoothingSlider.doubleValue;
             break;
+        case kSettingCursorDeadzone:
+            settings.cursorDeadzone = self.cursorDeadzoneSlider.doubleValue;
+            break;
+        case kSettingCursorMaxStep:
+            settings.cursorMaxStep = self.cursorMaxStepSlider.doubleValue;
+            break;
         case kSettingPinchSensitivity:
             settings.pinchEnterRatio = self.pinchSensitivitySlider.doubleValue;
             settings.pinchExitRatio = settings.pinchEnterRatio + 0.14;
@@ -508,6 +566,9 @@ enum {
             break;
         case kSettingScrollSpeed:
             settings.scrollSpeed = self.scrollSpeedSlider.doubleValue;
+            break;
+        case kSettingScrollAcceleration:
+            settings.scrollAcceleration = self.scrollAccelerationSlider.doubleValue;
             break;
         case kSettingScrollSmoothing:
             settings.scrollSmoothing = self.scrollSmoothingSlider.doubleValue;

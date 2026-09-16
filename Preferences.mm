@@ -8,6 +8,8 @@
 static NSString *const kSettingsDomain = @"com.fankahou.mightymouse";
 static NSString *const kCursorGainKey = @"CursorGain";
 static NSString *const kCursorSmoothingKey = @"CursorSmoothing";
+static NSString *const kCursorDeadzoneKey = @"CursorDeadzone";
+static NSString *const kCursorMaxStepKey = @"CursorMaxStep";
 static NSString *const kPinchEnterRatioKey = @"PinchEnterRatio";
 static NSString *const kPinchExitRatioKey = @"PinchExitRatio";
 static NSString *const kPinchActivationDelayKey = @"PinchActivationDelay";
@@ -28,6 +30,8 @@ GestureSettings DefaultGestureSettings() {
     return GestureSettings{
         .cursorGain = 1.60,
         .cursorSmoothing = 0.26,
+        .cursorDeadzone = 0.003,
+        .cursorMaxStep = 220.0,
         .pinchEnterRatio = 0.28,
         .pinchExitRatio = 0.42,
         .pinchActivationDelay = 0.10,
@@ -49,6 +53,8 @@ static double Clamped(double value, double minimum, double maximum) {
 static GestureSettings NormalizeSettings(GestureSettings settings) {
     settings.cursorGain = Clamped(settings.cursorGain, 1.0, 2.6);
     settings.cursorSmoothing = Clamped(settings.cursorSmoothing, 0.12, 0.55);
+    settings.cursorDeadzone = Clamped(settings.cursorDeadzone, 0.0, 0.025);
+    settings.cursorMaxStep = Clamped(settings.cursorMaxStep, 40.0, 600.0);
 
     settings.pinchEnterRatio = Clamped(settings.pinchEnterRatio, 0.18, 0.40);
     settings.pinchExitRatio = Clamped(settings.pinchExitRatio,
@@ -71,6 +77,8 @@ static void RegisterDefaults(NSUserDefaults *defaults) {
     [defaults registerDefaults:@{
         kCursorGainKey: @(settings.cursorGain),
         kCursorSmoothingKey: @(settings.cursorSmoothing),
+        kCursorDeadzoneKey: @(settings.cursorDeadzone),
+        kCursorMaxStepKey: @(settings.cursorMaxStep),
         kPinchEnterRatioKey: @(settings.pinchEnterRatio),
         kPinchExitRatioKey: @(settings.pinchExitRatio),
         kPinchActivationDelayKey: @(settings.pinchActivationDelay),
@@ -89,6 +97,8 @@ static GestureSettings ReadSettings(NSUserDefaults *defaults) {
     GestureSettings settings{
         .cursorGain = [defaults doubleForKey:kCursorGainKey],
         .cursorSmoothing = [defaults doubleForKey:kCursorSmoothingKey],
+        .cursorDeadzone = [defaults doubleForKey:kCursorDeadzoneKey],
+        .cursorMaxStep = [defaults doubleForKey:kCursorMaxStepKey],
         .pinchEnterRatio = [defaults doubleForKey:kPinchEnterRatioKey],
         .pinchExitRatio = [defaults doubleForKey:kPinchExitRatioKey],
         .pinchActivationDelay = [defaults doubleForKey:kPinchActivationDelayKey],
@@ -108,6 +118,8 @@ static void WriteSettings(NSUserDefaults *defaults, GestureSettings settings) {
     settings = NormalizeSettings(settings);
     [defaults setDouble:settings.cursorGain forKey:kCursorGainKey];
     [defaults setDouble:settings.cursorSmoothing forKey:kCursorSmoothingKey];
+    [defaults setDouble:settings.cursorDeadzone forKey:kCursorDeadzoneKey];
+    [defaults setDouble:settings.cursorMaxStep forKey:kCursorMaxStepKey];
     [defaults setDouble:settings.pinchEnterRatio forKey:kPinchEnterRatioKey];
     [defaults setDouble:settings.pinchExitRatio forKey:kPinchExitRatioKey];
     [defaults setDouble:settings.pinchActivationDelay forKey:kPinchActivationDelayKey];

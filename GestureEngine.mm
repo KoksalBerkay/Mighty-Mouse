@@ -559,6 +559,17 @@ static int FindVitureProductID() {
         : settings.cursorSmoothing;
     CGPoint smoothedPos = CGPointMake((targetX * alpha) + (self.lastMousePos.x * (1.0 - alpha)),
                                       (targetY * alpha) + (self.lastMousePos.y * (1.0 - alpha)));
+    CGPoint cursorDelta = CGPointMake(smoothedPos.x - self.lastMousePos.x,
+                                      smoothedPos.y - self.lastMousePos.y);
+    CGFloat cursorDistance = hypot(cursorDelta.x, cursorDelta.y);
+    CGFloat cursorDeadzonePixels = settings.cursorDeadzone *
+                                   fmin(self.screenSize.width, self.screenSize.height);
+    if (cursorDistance <= cursorDeadzonePixels) return;
+    if (settings.cursorMaxStep > 0.0 && cursorDistance > settings.cursorMaxStep) {
+        CGFloat scale = settings.cursorMaxStep / cursorDistance;
+        smoothedPos = CGPointMake(self.lastMousePos.x + cursorDelta.x * scale,
+                                  self.lastMousePos.y + cursorDelta.y * scale);
+    }
     self.lastMousePos = smoothedPos;
 
     CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);

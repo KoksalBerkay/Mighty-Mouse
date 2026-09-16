@@ -7,6 +7,8 @@
 struct GestureSettings {
     double cursorGain;
     double cursorSmoothing;
+    double cursorDeadzone;
+    double cursorMaxStep;
 
     double pinchEnterRatio;
     double pinchExitRatio;

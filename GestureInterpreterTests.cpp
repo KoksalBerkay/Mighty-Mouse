@@ -11,11 +11,16 @@ static void Expect(bool condition, const char *message) {
 }
 
 static GestureSettings TestSettings() {
-    GestureSettings settings{
-        1.60, 0.26,
-        0.28, 0.42, 0.10, 0.35, 0.045,
-        1.0, 0.15, 0.32, 0.20, 0.005, false,
-    };
+    GestureSettings settings{};
+    settings.cursorGain = 1.60;
+    settings.cursorSmoothing = 0.26;
+    settings.cursorDeadzone = 0.003;
+    settings.cursorMaxStep = 220.0;
+    settings.pinchEnterRatio = 0.28;
+    settings.pinchExitRatio = 0.42;
+    settings.pinchActivationDelay = 0.10;
+    settings.dragHoldDuration = 0.35;
+    settings.dragMovementThreshold = 0.045;
     settings.scrollActivationDelay = 0.20;
     settings.scrollDeadzone = 0.005;
     settings.scrollSmoothing = 0.65;
