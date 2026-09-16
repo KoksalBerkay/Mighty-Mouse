@@ -9,12 +9,19 @@
 #include <atomic>
 #include "viture_device_carina.h"
 #include "GestureEngine.h"
+#include "Preferences.h"
 
 @class HandTracker;
 static HandTracker *g_tracker = nil;
 static std::atomic<int> g_engineStatus{0};
 static std::atomic<int> g_carinaCallbacks{0};
 static std::atomic<bool> g_trackingEnabled{true};
+
+enum {
+    kPinchIdle = 0,
+    kPinchCandidate = 1,
+    kPinchArmed = 2,
+};
 
 enum {
     kEngineStatusStarting = 0,
@@ -112,6 +119,7 @@ static int FindVitureProductID() {
 @property (nonatomic, assign) CGPoint pinchStartIndex;
 @property (nonatomic, assign) CGPoint pinchAnchor;
 @property (nonatomic, assign) BOOL dragActive;
+@property (nonatomic, assign) CFAbsoluteTime lastHandSeenTime;
 @property (nonatomic, assign) BOOL scrollActive;
 @property (nonatomic, assign) CFAbsoluteTime scrollStartTime;
 @property (nonatomic, assign) CGPoint lastScrollPoint;
@@ -132,6 +140,7 @@ static int FindVitureProductID() {
         _pinchStartIndex = CGPointZero;
         _pinchAnchor = CGPointZero;
         _dragActive = NO;
+        _lastHandSeenTime = 0.0;
         _scrollActive = NO;
         _scrollStartTime = 0.0;
         _lastScrollPoint = CGPointZero;
@@ -302,8 +311,32 @@ static int FindVitureProductID() {
     [handler performRequests:@[request] error:&visionError];
     
     if (request.results.count > 0) {
+        self.lastHandSeenTime = CFAbsoluteTimeGetCurrent();
         [self processHand:request.results.firstObject];
+    } else if (self.pinchState != kPinchIdle || self.scrollActive) {
+        // Vision occasionally loses the hand for a few frames. Do not leave
+        // a drag pressed or a scroll mode latched when that happens.
+        CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+        if (self.lastHandSeenTime == 0.0 || now - self.lastHandSeenTime >= 0.18) {
+            [self resetInteraction];
+        }
     }
+}
+
+- (void)postMouseEvent:(CGEventType)type at:(CGPoint)point {
+    CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
+    if (!source) return;
+    CGEventRef event = CGEventCreateMouseEvent(source, type, point, kCGMouseButtonLeft);
+    if (event) {
+        CGEventPost(kCGHIDEventTap, event);
+        CFRelease(event);
+    }
+    CFRelease(source);
+}
+
+- (void)postClickAt:(CGPoint)point {
+    [self postMouseEvent:kCGEventLeftMouseDown at:point];
+    [self postMouseEvent:kCGEventLeftMouseUp at:point];
 }
 
 - (void)processHand:(VNHumanHandPoseObservation *)hand {
@@ -311,6 +344,7 @@ static int FindVitureProductID() {
     VNRecognizedPoint *thumbTip = [hand recognizedPointForJointName:VNHumanHandPoseObservationJointNameThumbTip error:nil];
 
     if (!g_trackingEnabled.load()) return;
+    GestureSettings settings = CurrentGestureSettings();
 
     // Use hand-relative pinch distance so clicking is stable at different
     // distances from the camera. Hysteresis prevents natural fingertip jitter
@@ -323,11 +357,11 @@ static int FindVitureProductID() {
         : 1.0;
     const CGFloat minimumIndexConfidence = 0.45;
     const CGFloat minimumThumbConfidence = 0.45;
-    const CGFloat pinchEnterRatio = 0.28;
-    const CGFloat pinchExitRatio = 0.42;
+    const CGFloat pinchEnterRatio = settings.pinchEnterRatio;
+    const CGFloat pinchExitRatio = settings.pinchExitRatio;
     BOOL isPinchingNow = indexTip.confidence >= minimumIndexConfidence &&
                          thumbTip.confidence >= minimumThumbConfidence &&
-                         pinchRatio < (self.pinchState == 0 ? pinchEnterRatio : pinchExitRatio);
+                         pinchRatio < (self.pinchState == kPinchIdle ? pinchEnterRatio : pinchExitRatio);
 
     // A separate two-finger pose gives scrolling its own meaning. Requiring
     // the ring and pinky to be folded avoids turning an open-hand movement
@@ -384,7 +418,7 @@ static int FindVitureProductID() {
         return;
     }
 
-    if (scrollPoseNow && self.pinchState == 0) {
+    if (scrollPoseNow && self.pinchState == kPinchIdle) {
         CGPoint scrollPoint = CGPointMake((indexTip.location.x + middleTip.location.x) / 2.0,
                                            (indexTip.location.y + middleTip.location.y) / 2.0);
         if (self.scrollStartTime == 0.0) {
@@ -400,46 +434,41 @@ static int FindVitureProductID() {
     self.scrollStartTime = 0.0;
 
     // Pinch is a latched interaction. The pointer is held at its anchor while
-    // the pinch settles, so a small natural index shift cannot move the click.
+    // the pinch settles. A short, stable pinch followed by release is a click;
+    // a deliberate movement after the drag hold threshold becomes a drag.
     if (isPinchingNow) {
-        if (self.pinchState == 0) {
-            self.pinchState = 1; // candidate
+        if (self.pinchState == kPinchIdle) {
+            self.pinchState = kPinchCandidate;
             self.pinchStartTime = now;
             self.pinchStartIndex = indexTip.location;
             self.pinchAnchor = self.lastMousePos;
             self.dragActive = NO;
-        } else if (self.pinchState == 1 && now - self.pinchStartTime >= 0.10) {
-            self.pinchState = 2; // held/pressed
-            self.isClicking = YES;
-            CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
-            if (src) {
-                CGEventRef down = CGEventCreateMouseEvent(src, kCGEventLeftMouseDown,
-                                                          self.pinchAnchor, kCGMouseButtonLeft);
-                CGEventPost(kCGHIDEventTap, down);
-                CFRelease(down);
-                CFRelease(src);
-            }
+        } else if (self.pinchState == kPinchCandidate &&
+                   now - self.pinchStartTime >= settings.pinchActivationDelay) {
+            self.pinchState = kPinchArmed;
         }
 
-        if (self.pinchState == 2 && now - self.pinchStartTime >= 0.35) {
+        if (self.pinchState == kPinchArmed &&
+            now - self.pinchStartTime >= settings.dragHoldDuration) {
             CGFloat intentionalMovement = hypot(indexTip.location.x - self.pinchStartIndex.x,
                                                 indexTip.location.y - self.pinchStartIndex.y);
-            if (intentionalMovement > 0.045) self.dragActive = YES;
-        }
-        if (!self.dragActive) return;
-    } else if (self.pinchState != 0) {
-        if (self.isClicking) {
-            self.isClicking = NO;
-            CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
-            if (src) {
-                CGEventRef up = CGEventCreateMouseEvent(src, kCGEventLeftMouseUp,
-                                                        self.lastMousePos, kCGMouseButtonLeft);
-                CGEventPost(kCGHIDEventTap, up);
-                CFRelease(up);
-                CFRelease(src);
+            if (intentionalMovement > settings.dragMovementThreshold) {
+                if (!self.isClicking) {
+                    [self postMouseEvent:kCGEventLeftMouseDown at:self.pinchAnchor];
+                    self.isClicking = YES;
+                }
+                self.dragActive = YES;
             }
         }
-        self.pinchState = 0;
+        if (!self.dragActive) return;
+    } else if (self.pinchState != kPinchIdle) {
+        if (self.isClicking) {
+            self.isClicking = NO;
+            [self postMouseEvent:kCGEventLeftMouseUp at:self.lastMousePos];
+        } else if (self.pinchState == kPinchArmed) {
+            [self postClickAt:self.pinchAnchor];
+        }
+        self.pinchState = kPinchIdle;
         self.pinchStartTime = 0.0;
         self.dragActive = NO;
         return;
@@ -449,7 +478,7 @@ static int FindVitureProductID() {
 
     // EDGE-TO-EDGE MAPPING LOGIC. The camera center is 0.5; gain stretches
     // the reachable area while clamping keeps the pointer on-screen.
-    CGFloat gain = 1.6;
+    CGFloat gain = settings.cursorGain;
     CGFloat mappedX = (indexTip.location.x - 0.5) * gain + 0.5;
     CGFloat mappedY = (indexTip.location.y - 0.5) * gain + 0.5;
     mappedX = fmax(0.0, fmin(1.0, mappedX));
@@ -462,7 +491,9 @@ static int FindVitureProductID() {
         self.hasFirstPos = YES;
     }
 
-    CGFloat alpha = self.dragActive ? 0.36 : 0.26;
+    CGFloat alpha = self.dragActive
+        ? fmin(0.60, settings.cursorSmoothing + 0.10)
+        : settings.cursorSmoothing;
     CGPoint smoothedPos = CGPointMake((targetX * alpha) + (self.lastMousePos.x * (1.0 - alpha)),
                                       (targetY * alpha) + (self.lastMousePos.y * (1.0 - alpha)));
     self.lastMousePos = smoothedPos;
@@ -479,22 +510,16 @@ static int FindVitureProductID() {
 
 - (void)resetInteraction {
     if (self.isClicking) {
-        CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
-        if (src) {
-            CGEventRef up = CGEventCreateMouseEvent(src, kCGEventLeftMouseUp,
-                                                    self.lastMousePos, kCGMouseButtonLeft);
-            CGEventPost(kCGHIDEventTap, up);
-            CFRelease(up);
-            CFRelease(src);
-        }
+        [self postMouseEvent:kCGEventLeftMouseUp at:self.lastMousePos];
     }
     self.isClicking = NO;
-    self.pinchState = 0;
+    self.pinchState = kPinchIdle;
     self.pinchStartTime = 0.0;
     self.dragActive = NO;
     self.scrollActive = NO;
     self.scrollStartTime = 0.0;
     self.scrollRemainder = 0.0;
+    self.lastHandSeenTime = 0.0;
     self.hasFirstPos = NO;
 }
 
