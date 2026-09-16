@@ -16,6 +16,8 @@ By utilizing a relative displacement strategy, this tool anchors your hand inter
   - **Drag:** Hold the pinch and intentionally move after the hold threshold.
   - **Scroll:** Extend the index and middle fingers while curling the ring and little fingers, then move vertically.
 - **Safe Control:** Pause or resume gesture output from the menu bar without quitting the app.
+- **Comfort Controls:** Adjust cursor response, pinch stabilization, drag thresholds, and scroll behavior from the menu bar.
+- **Persistent Preferences:** Settings are saved automatically and can be restored to recommended defaults at any time.
 - **Silicon Optimized:** Native `arm64` support for M1, M2, and M3 Macs.
 - **Clean Console:** Automatically suppresses framework-level warnings for a focused developer experience.
 
@@ -38,10 +40,22 @@ To function, macOS requires you to grant the following permissions in **System S
 ## 🎮 Gesture Guide
 
 - **Move:** Hold up only your index finger and move it naturally.
-- **Click:** Bring thumb and index together briefly. The pointer is latched during the pinch so small index movement is ignored.
-- **Drag:** Keep the pinch held beyond the click hold and move deliberately.
-- **Scroll:** Hold index and middle fingers up with ring and little fingers curled; move the two-finger pair vertically. A short dwell prevents accidental scrolling.
+- **Click:** Bring thumb and index together, wait for the pinch to arm, then release. Mighty Mouse sends the click at the frozen cursor position, so the release does not need to be precisely timed.
+- **Drag:** Keep the pinch held beyond the drag hold duration and move deliberately past the movement threshold. Release the pinch to stop dragging.
+- **Scroll:** Hold index and middle fingers up with ring and little fingers curled; wait for the short activation dwell, then move the two-finger pair vertically. Noise filtering and gentle acceleration make slow and fast scrolling usable.
 - **Pause:** Choose **Pause Tracking** from the hand-icon menu when you need normal mouse control.
+
+## ⚙️ Comfort Settings
+
+Open the hand-icon menu in the macOS menu bar. **Quick Settings** provides one-click presets for cursor sensitivity, cursor response, scroll speed, and scroll direction. Choose **Open Settings…** for fine control over:
+
+- Cursor sensitivity and response smoothing.
+- Pinch sensitivity and stabilization delay.
+- Drag hold duration and movement threshold.
+- Scroll speed, smoothing, activation delay, and noise filter.
+- Natural or reversed scroll direction.
+
+Every change applies immediately and is saved automatically for the next launch. Choose **Restore Default Settings** from either the menu or the settings window to return to the recommended defaults.
 
 ## 🚀 Installation & Build
 
