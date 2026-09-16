@@ -1,5 +1,9 @@
 
-.PHONY: all build run
+APP_BUNDLE := Mighty Mouse.app
+APP_ID := com.fankahou.mightymouse
+SIGNING_REQUIREMENT := /private/tmp/mighty_mouse.csreq
+
+.PHONY: all build run sign-app
 
 all: build
 
@@ -24,3 +28,15 @@ build:
 
 run: build
 	DYLD_LIBRARY_PATH=./aarch64 ./mighty_mouse 2>/dev/null
+
+# Sign the local bundle with a stable identifier requirement. Ad-hoc signing
+# without this override uses the executable cdhash, which makes macOS privacy
+# permissions appear to disappear after every rebuild.
+sign-app: build
+	cp mighty_mouse '$(APP_BUNDLE)/Contents/MacOS/mighty_mouse'
+	install_name_tool -delete_rpath ./aarch64 -add_rpath '@executable_path/../Frameworks' '$(APP_BUNDLE)/Contents/MacOS/mighty_mouse'
+	csreq -r '=designated => identifier "$(APP_ID)"' -b '$(SIGNING_REQUIREMENT)'
+	codesign --force --sign - '$(APP_BUNDLE)/Contents/Frameworks/libcarina_vio.dylib'
+	codesign --force --sign - '$(APP_BUNDLE)/Contents/Frameworks/libglasses.dylib'
+	codesign --force --sign - --requirements '$(SIGNING_REQUIREMENT)' '$(APP_BUNDLE)/Contents/MacOS/mighty_mouse'
+	codesign --force --sign - --requirements '$(SIGNING_REQUIREMENT)' '$(APP_BUNDLE)'
