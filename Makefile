@@ -1,4 +1,9 @@
-all:
+
+.PHONY: all build run
+
+all: build
+
+build:
 	clang++ main.mm GestureEngine.mm -o mighty_mouse \
 	-fobjc-arc \
     -I./include \
@@ -15,4 +20,6 @@ all:
     -framework IOKit \
     -framework AppKit \
     -arch arm64
+
+run: build
 	DYLD_LIBRARY_PATH=./aarch64 ./mighty_mouse 2>/dev/null

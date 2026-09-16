@@ -1,0 +1,9 @@
+# Local build outputs
+mighty_mouse
+Mighty Mouse.app/
+
+# Temporary diagnostics
+work/
+
+# macOS metadata
+.DS_Store

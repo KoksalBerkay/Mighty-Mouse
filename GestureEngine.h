@@ -10,6 +10,9 @@ void StartGestureEngine();
 // Stops the camera and cleans up memory
 void StopGestureEngine();
 
+// Returns a short, human-readable status for the menu bar item.
+const char *GestureEngineStatus();
+
 #ifdef __cplusplus
 }
 #endif
