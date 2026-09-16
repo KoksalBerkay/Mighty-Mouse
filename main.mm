@@ -12,6 +12,7 @@
 #endif
 
 #include "GestureEngine.h"
+#include "Preferences.h"
 
 static BOOL AccessibilityPermissionGranted() {
     return AXIsProcessTrusted();
@@ -154,6 +155,7 @@ int main() {
         std::cout << "Accessibility trust: "
                   << (AccessibilityPermissionGranted() ? "allowed" : "needed")
                   << std::endl;
+        LoadGestureSettings();
         if (!AccessibilityPermissionGranted()) {
             std::cout << "Requesting Accessibility permission..." << std::endl;
             NSDictionary *options = @{

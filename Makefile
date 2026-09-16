@@ -8,7 +8,7 @@ SIGNING_REQUIREMENT := /private/tmp/mighty_mouse.csreq
 all: build
 
 build:
-	clang++ main.mm GestureEngine.mm -o mighty_mouse \
+	clang++ main.mm GestureEngine.mm Preferences.mm -o mighty_mouse \
 	-fobjc-arc \
     -I./include \
     ./aarch64/libcarina_vio.dylib \
