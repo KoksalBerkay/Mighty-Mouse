@@ -3,6 +3,8 @@
 #include <cstdlib>
 #include <iostream>
 
+void RunGestureGeometryTests();
+
 static void Expect(bool condition, const char *message) {
     if (!condition) {
         std::cerr << "FAIL: " << message << std::endl;
@@ -83,6 +85,7 @@ int main() {
     TestActivationAndNoise();
     TestClutchRebasesAfterBoundary();
     TestShortReverseIsIgnored();
+    RunGestureGeometryTests();
     std::cout << "Gesture interpreter tests passed" << std::endl;
     return 0;
 }

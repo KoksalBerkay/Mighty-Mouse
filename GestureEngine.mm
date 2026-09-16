@@ -12,6 +12,7 @@
 #include "GestureEngine.h"
 #include "Preferences.h"
 #include "GestureInterpreter.h"
+#include "GestureGeometry.h"
 
 @class HandTracker;
 static HandTracker *g_tracker = nil;
@@ -40,20 +41,11 @@ static CGFloat DistanceBetweenPoints(VNRecognizedPoint *first, VNRecognizedPoint
                  first.location.y - second.location.y);
 }
 
-static CGFloat AngleAtJoint(VNRecognizedPoint *first,
-                            VNRecognizedPoint *joint,
-                            VNRecognizedPoint *last) {
-    if (!first || !joint || !last) return 0.0;
-    CGFloat firstX = first.location.x - joint.location.x;
-    CGFloat firstY = first.location.y - joint.location.y;
-    CGFloat lastX = last.location.x - joint.location.x;
-    CGFloat lastY = last.location.y - joint.location.y;
-    CGFloat firstLength = hypot(firstX, firstY);
-    CGFloat lastLength = hypot(lastX, lastY);
-    if (firstLength < 0.001 || lastLength < 0.001) return 0.0;
-    CGFloat cosine = (firstX * lastX + firstY * lastY) / (firstLength * lastLength);
-    cosine = fmax(-1.0, fmin(1.0, cosine));
-    return acos(cosine) * 180.0 / M_PI;
+static GestureLandmark VisionLandmark(VNHumanHandPoseObservation *hand,
+                                      VNRecognizedPointKey name) {
+    VNRecognizedPoint *point = [hand recognizedPointForJointName:name error:nil];
+    if (!point) return GestureLandmark{0.0, 0.0, 0.0};
+    return GestureLandmark{point.location.x, point.location.y, point.confidence};
 }
 
 static BOOL FingerIsExtended(VNHumanHandPoseObservation *hand,
@@ -61,37 +53,19 @@ static BOOL FingerIsExtended(VNHumanHandPoseObservation *hand,
                              VNRecognizedPointKey pipName,
                              VNRecognizedPointKey dipName,
                              VNRecognizedPointKey mcpName) {
-    VNRecognizedPoint *tip = [hand recognizedPointForJointName:tipName error:nil];
-    VNRecognizedPoint *pip = [hand recognizedPointForJointName:pipName error:nil];
-    VNRecognizedPoint *dip = [hand recognizedPointForJointName:dipName error:nil];
-    VNRecognizedPoint *mcp = [hand recognizedPointForJointName:mcpName error:nil];
-    if (!tip || !pip || !dip || !mcp ||
-        tip.confidence < 0.45 || pip.confidence < 0.40 ||
-        dip.confidence < 0.40 || mcp.confidence < 0.35) {
-        return NO;
-    }
-    CGFloat pipAngle = AngleAtJoint(mcp, pip, tip);
-    CGFloat dipAngle = AngleAtJoint(pip, dip, tip);
-    CGFloat extension = DistanceBetweenPoints(tip, mcp) /
-                        fmax(0.01, DistanceBetweenPoints(pip, mcp));
-    return pipAngle >= 142.0 && dipAngle >= 135.0 && extension >= 1.16;
+    return GestureFingerIsExtended(VisionLandmark(hand, tipName),
+                                   VisionLandmark(hand, pipName),
+                                   VisionLandmark(hand, dipName),
+                                   VisionLandmark(hand, mcpName));
 }
 
 static BOOL FingerIsFolded(VNHumanHandPoseObservation *hand,
                            VNRecognizedPointKey tipName,
                            VNRecognizedPointKey pipName,
                            VNRecognizedPointKey mcpName) {
-    VNRecognizedPoint *tip = [hand recognizedPointForJointName:tipName error:nil];
-    VNRecognizedPoint *pip = [hand recognizedPointForJointName:pipName error:nil];
-    VNRecognizedPoint *mcp = [hand recognizedPointForJointName:mcpName error:nil];
-    if (!tip || !pip || !mcp || tip.confidence < 0.35 ||
-        pip.confidence < 0.30 || mcp.confidence < 0.30) {
-        return NO;
-    }
-    CGFloat pipAngle = AngleAtJoint(mcp, pip, tip);
-    CGFloat tipToMCP = DistanceBetweenPoints(tip, mcp);
-    CGFloat pipToMCP = DistanceBetweenPoints(pip, mcp);
-    return pipAngle <= 150.0 || tipToMCP <= pipToMCP * 1.18;
+    return GestureFingerIsFolded(VisionLandmark(hand, tipName),
+                                 VisionLandmark(hand, pipName),
+                                 VisionLandmark(hand, mcpName));
 }
 
 static void CarinaCameraCallback(char *imageLeft0,
