@@ -14,6 +14,7 @@
 static HandTracker *g_tracker = nil;
 static std::atomic<int> g_engineStatus{0};
 static std::atomic<int> g_carinaCallbacks{0};
+static std::atomic<bool> g_trackingEnabled{true};
 
 enum {
     kEngineStatusStarting = 0,
@@ -22,6 +23,36 @@ enum {
     kEngineStatusUnavailable = 3,
     kEngineStatusPermissionDenied = 4,
 };
+
+static CGFloat DistanceBetweenPoints(VNRecognizedPoint *first, VNRecognizedPoint *second) {
+    if (!first || !second) return 0.0;
+    return hypot(first.location.x - second.location.x,
+                 first.location.y - second.location.y);
+}
+
+static BOOL FingerIsExtended(VNHumanHandPoseObservation *hand,
+                             VNRecognizedPointKey tipName,
+                             VNRecognizedPointKey pipName,
+                             VNRecognizedPoint *wrist) {
+    VNRecognizedPoint *tip = [hand recognizedPointForJointName:tipName error:nil];
+    VNRecognizedPoint *pip = [hand recognizedPointForJointName:pipName error:nil];
+    if (!tip || !pip || !wrist || tip.confidence < 0.45 || pip.confidence < 0.40 || wrist.confidence < 0.35) {
+        return NO;
+    }
+    return DistanceBetweenPoints(tip, wrist) > DistanceBetweenPoints(pip, wrist) * 1.12;
+}
+
+static BOOL FingerIsFolded(VNHumanHandPoseObservation *hand,
+                           VNRecognizedPointKey tipName,
+                           VNRecognizedPointKey pipName,
+                           VNRecognizedPoint *wrist) {
+    VNRecognizedPoint *tip = [hand recognizedPointForJointName:tipName error:nil];
+    VNRecognizedPoint *pip = [hand recognizedPointForJointName:pipName error:nil];
+    if (!tip || !pip || !wrist || tip.confidence < 0.35 || pip.confidence < 0.30 || wrist.confidence < 0.30) {
+        return NO;
+    }
+    return DistanceBetweenPoints(tip, wrist) <= DistanceBetweenPoints(pip, wrist) * 1.12;
+}
 
 static void CarinaCameraCallback(char *imageLeft0,
                                  char *imageRight0,
@@ -76,6 +107,15 @@ static int FindVitureProductID() {
 @property (nonatomic, assign) BOOL hasFirstPos;
 @property (nonatomic, assign) XRDeviceProviderHandle carinaHandle;
 @property (nonatomic, assign) BOOL usingCarina;
+@property (nonatomic, assign) NSInteger pinchState;
+@property (nonatomic, assign) CFAbsoluteTime pinchStartTime;
+@property (nonatomic, assign) CGPoint pinchStartIndex;
+@property (nonatomic, assign) CGPoint pinchAnchor;
+@property (nonatomic, assign) BOOL dragActive;
+@property (nonatomic, assign) BOOL scrollActive;
+@property (nonatomic, assign) CFAbsoluteTime scrollStartTime;
+@property (nonatomic, assign) CGPoint lastScrollPoint;
+@property (nonatomic, assign) CGFloat scrollRemainder;
 @end
 
 @implementation HandTracker
@@ -87,6 +127,15 @@ static int FindVitureProductID() {
         _hasFirstPos = NO;
         _carinaHandle = NULL;
         _usingCarina = NO;
+        _pinchState = 0;
+        _pinchStartTime = 0.0;
+        _pinchStartIndex = CGPointZero;
+        _pinchAnchor = CGPointZero;
+        _dragActive = NO;
+        _scrollActive = NO;
+        _scrollStartTime = 0.0;
+        _lastScrollPoint = CGPointZero;
+        _scrollRemainder = 0.0;
         _screenSize = CGDisplayBounds(CGMainDisplayID()).size;
     }
     return self;
@@ -260,74 +309,197 @@ static int FindVitureProductID() {
 - (void)processHand:(VNHumanHandPoseObservation *)hand {
     VNRecognizedPoint *indexTip = [hand recognizedPointForJointName:VNHumanHandPoseObservationJointNameIndexTip error:nil];
     VNRecognizedPoint *thumbTip = [hand recognizedPointForJointName:VNHumanHandPoseObservationJointNameThumbTip error:nil];
-    
-    // Cursor movement only needs a reliable index fingertip. Requiring the
-    // thumb as well makes pointing fail whenever the thumb is out of frame.
-    const CGFloat minimumIndexConfidence = 0.25;
-    const CGFloat minimumThumbConfidence = 0.35;
-    if (indexTip.confidence < minimumIndexConfidence) {
+
+    if (!g_trackingEnabled.load()) return;
+
+    // Use hand-relative pinch distance so clicking is stable at different
+    // distances from the camera. Hysteresis prevents natural fingertip jitter
+    // from repeatedly entering and leaving the pinch state.
+    VNRecognizedPoint *wrist = [hand recognizedPointForJointName:VNHumanHandPoseObservationJointNameWrist error:nil];
+    VNRecognizedPoint *middleMCP = [hand recognizedPointForJointName:VNHumanHandPoseObservationJointNameMiddleMCP error:nil];
+    CGFloat palmScale = DistanceBetweenPoints(wrist, middleMCP);
+    CGFloat pinchRatio = palmScale > 0.01
+        ? DistanceBetweenPoints(indexTip, thumbTip) / palmScale
+        : 1.0;
+    const CGFloat minimumIndexConfidence = 0.45;
+    const CGFloat minimumThumbConfidence = 0.45;
+    const CGFloat pinchEnterRatio = 0.28;
+    const CGFloat pinchExitRatio = 0.42;
+    BOOL isPinchingNow = indexTip.confidence >= minimumIndexConfidence &&
+                         thumbTip.confidence >= minimumThumbConfidence &&
+                         pinchRatio < (self.pinchState == 0 ? pinchEnterRatio : pinchExitRatio);
+
+    // A separate two-finger pose gives scrolling its own meaning. Requiring
+    // the ring and pinky to be folded avoids turning an open-hand movement
+    // into an accidental scroll.
+    VNRecognizedPoint *middleTip = [hand recognizedPointForJointName:VNHumanHandPoseObservationJointNameMiddleTip error:nil];
+    BOOL indexExtended = FingerIsExtended(hand,
+                                          VNHumanHandPoseObservationJointNameIndexTip,
+                                          VNHumanHandPoseObservationJointNameIndexPIP,
+                                          wrist);
+    BOOL middleExtended = FingerIsExtended(hand,
+                                           VNHumanHandPoseObservationJointNameMiddleTip,
+                                           VNHumanHandPoseObservationJointNameMiddlePIP,
+                                           wrist);
+    BOOL ringFolded = FingerIsFolded(hand,
+                                     VNHumanHandPoseObservationJointNameRingTip,
+                                     VNHumanHandPoseObservationJointNameRingPIP,
+                                     wrist);
+    BOOL pinkyFolded = FingerIsFolded(hand,
+                                      VNHumanHandPoseObservationJointNameLittleTip,
+                                      VNHumanHandPoseObservationJointNameLittlePIP,
+                                      wrist);
+    BOOL scrollPoseNow = !isPinchingNow && indexExtended && middleExtended &&
+                         middleTip.confidence >= 0.45 && ringFolded && pinkyFolded;
+    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+
+    if (self.scrollActive) {
+        if (!scrollPoseNow) {
+            self.scrollActive = NO;
+            self.scrollStartTime = 0.0;
+            self.scrollRemainder = 0.0;
+            return;
+        }
+        CGPoint scrollPoint = CGPointMake((indexTip.location.x + middleTip.location.x) / 2.0,
+                                           (indexTip.location.y + middleTip.location.y) / 2.0);
+        CGFloat deltaY = scrollPoint.y - self.lastScrollPoint.y;
+        self.lastScrollPoint = scrollPoint;
+        // The dead zone filters camera noise; the scale turns normalized hand
+        // displacement into comfortable line-based macOS scrolling.
+        self.scrollRemainder += deltaY * 70.0;
+        int scrollLines = (int)self.scrollRemainder;
+        if (scrollLines != 0) {
+            self.scrollRemainder -= scrollLines;
+            CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
+            if (src) {
+                CGEventRef scroll = CGEventCreateScrollWheelEvent(src,
+                                                                   kCGScrollEventUnitLine,
+                                                                   1,
+                                                                   scrollLines);
+                CGEventPost(kCGHIDEventTap, scroll);
+                CFRelease(scroll);
+                CFRelease(src);
+            }
+        }
         return;
     }
 
-    // 1. EDGE-TO-EDGE MAPPING LOGIC
-    // The camera center is 0.5. We subtract 0.5 to center the coordinates at 0.0.
-    // Then we multiply by a 'gain' factor (e.g., 1.5) to stretch the reach.
-    CGFloat gain = 1.6; 
-    CGFloat mappedX = (indexTip.x - 0.5) * gain + 0.5;
-    CGFloat mappedY = (indexTip.y - 0.5) * gain + 0.5;
+    if (scrollPoseNow && self.pinchState == 0) {
+        CGPoint scrollPoint = CGPointMake((indexTip.location.x + middleTip.location.x) / 2.0,
+                                           (indexTip.location.y + middleTip.location.y) / 2.0);
+        if (self.scrollStartTime == 0.0) {
+            self.scrollStartTime = now;
+            self.lastScrollPoint = scrollPoint;
+            self.scrollRemainder = 0.0;
+        } else if (now - self.scrollStartTime >= 0.16) {
+            self.scrollActive = YES;
+            self.lastScrollPoint = scrollPoint;
+        }
+        return;
+    }
+    self.scrollStartTime = 0.0;
 
-    // Clamp values between 0.0 and 1.0 so the mouse doesn't disappear
+    // Pinch is a latched interaction. The pointer is held at its anchor while
+    // the pinch settles, so a small natural index shift cannot move the click.
+    if (isPinchingNow) {
+        if (self.pinchState == 0) {
+            self.pinchState = 1; // candidate
+            self.pinchStartTime = now;
+            self.pinchStartIndex = indexTip.location;
+            self.pinchAnchor = self.lastMousePos;
+            self.dragActive = NO;
+        } else if (self.pinchState == 1 && now - self.pinchStartTime >= 0.10) {
+            self.pinchState = 2; // held/pressed
+            self.isClicking = YES;
+            CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
+            if (src) {
+                CGEventRef down = CGEventCreateMouseEvent(src, kCGEventLeftMouseDown,
+                                                          self.pinchAnchor, kCGMouseButtonLeft);
+                CGEventPost(kCGHIDEventTap, down);
+                CFRelease(down);
+                CFRelease(src);
+            }
+        }
+
+        if (self.pinchState == 2 && now - self.pinchStartTime >= 0.35) {
+            CGFloat intentionalMovement = hypot(indexTip.location.x - self.pinchStartIndex.x,
+                                                indexTip.location.y - self.pinchStartIndex.y);
+            if (intentionalMovement > 0.045) self.dragActive = YES;
+        }
+        if (!self.dragActive) return;
+    } else if (self.pinchState != 0) {
+        if (self.isClicking) {
+            self.isClicking = NO;
+            CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
+            if (src) {
+                CGEventRef up = CGEventCreateMouseEvent(src, kCGEventLeftMouseUp,
+                                                        self.lastMousePos, kCGMouseButtonLeft);
+                CGEventPost(kCGHIDEventTap, up);
+                CFRelease(up);
+                CFRelease(src);
+            }
+        }
+        self.pinchState = 0;
+        self.pinchStartTime = 0.0;
+        self.dragActive = NO;
+        return;
+    }
+
+    if (indexTip.confidence < minimumIndexConfidence) return;
+
+    // EDGE-TO-EDGE MAPPING LOGIC. The camera center is 0.5; gain stretches
+    // the reachable area while clamping keeps the pointer on-screen.
+    CGFloat gain = 1.6;
+    CGFloat mappedX = (indexTip.location.x - 0.5) * gain + 0.5;
+    CGFloat mappedY = (indexTip.location.y - 0.5) * gain + 0.5;
     mappedX = fmax(0.0, fmin(1.0, mappedX));
     mappedY = fmax(0.0, fmin(1.0, mappedY));
-
-    // 2. Mapping to Screen Size
     CGFloat targetX = mappedX * self.screenSize.width;
     CGFloat targetY = (1.0 - mappedY) * self.screenSize.height;
 
-    // 3. Smoothing (Exponential Moving Average)
     if (!self.hasFirstPos) {
         self.lastMousePos = CGPointMake(targetX, targetY);
         self.hasFirstPos = YES;
     }
 
-    CGFloat alpha = 0.30; // Increased slightly for better responsiveness with high gain
-    CGPoint smoothedPos = CGPointMake(
-        (targetX * alpha) + (self.lastMousePos.x * (1.0 - alpha)),
-        (targetY * alpha) + (self.lastMousePos.y * (1.0 - alpha))
-    );
+    CGFloat alpha = self.dragActive ? 0.36 : 0.26;
+    CGPoint smoothedPos = CGPointMake((targetX * alpha) + (self.lastMousePos.x * (1.0 - alpha)),
+                                      (targetY * alpha) + (self.lastMousePos.y * (1.0 - alpha)));
     self.lastMousePos = smoothedPos;
-
-    // 4. Pinch & Click Logic. Pinching requires a confident thumb; pointing
-    // remains active when only the index fingertip is confidently visible.
-    BOOL isPinchingNow = NO;
-    if (thumbTip.confidence >= minimumThumbConfidence) {
-        CGFloat dist = hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
-        isPinchingNow = (dist < 0.05);
-    }
 
     CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
     if (src) {
-        if (isPinchingNow && !self.isClicking) {
-            self.isClicking = YES;
-            CGEventRef down = CGEventCreateMouseEvent(src, kCGEventLeftMouseDown, smoothedPos, kCGMouseButtonLeft);
-            CGEventPost(kCGHIDEventTap, down);
-            CFRelease(down);
-        } else if (!isPinchingNow && self.isClicking) {
-            self.isClicking = NO;
-            CGEventRef up = CGEventCreateMouseEvent(src, kCGEventLeftMouseUp, smoothedPos, kCGMouseButtonLeft);
-            CGEventPost(kCGHIDEventTap, up);
-            CFRelease(up);
-        } else {
-            CGEventType type = self.isClicking ? kCGEventLeftMouseDragged : kCGEventMouseMoved;
-            CGEventRef move = CGEventCreateMouseEvent(src, type, smoothedPos, kCGMouseButtonLeft);
-            CGEventPost(kCGHIDEventTap, move);
-            CFRelease(move);
-        }
+        CGEventType type = self.dragActive ? kCGEventLeftMouseDragged : kCGEventMouseMoved;
+        CGEventRef move = CGEventCreateMouseEvent(src, type, smoothedPos, kCGMouseButtonLeft);
+        CGEventPost(kCGHIDEventTap, move);
+        CFRelease(move);
         CFRelease(src);
     }
 }
 
+- (void)resetInteraction {
+    if (self.isClicking) {
+        CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
+        if (src) {
+            CGEventRef up = CGEventCreateMouseEvent(src, kCGEventLeftMouseUp,
+                                                    self.lastMousePos, kCGMouseButtonLeft);
+            CGEventPost(kCGHIDEventTap, up);
+            CFRelease(up);
+            CFRelease(src);
+        }
+    }
+    self.isClicking = NO;
+    self.pinchState = 0;
+    self.pinchStartTime = 0.0;
+    self.dragActive = NO;
+    self.scrollActive = NO;
+    self.scrollStartTime = 0.0;
+    self.scrollRemainder = 0.0;
+    self.hasFirstPos = NO;
+}
+
 - (void)stop {
+    [self resetInteraction];
     if (self.session) {
         [self.session stopRunning];
         self.session = nil;
@@ -357,6 +529,7 @@ static void CarinaCameraCallback(char *imageLeft0,
 }
 
 extern "C" void StartGestureEngine() {
+    g_trackingEnabled.store(true);
     if (!g_tracker) {
         g_tracker = [[HandTracker alloc] init];
         [g_tracker start];
@@ -371,7 +544,19 @@ extern "C" void StopGestureEngine() {
     g_engineStatus.store(kEngineStatusUnavailable);
 }
 
+extern "C" void SetGestureTrackingEnabled(bool enabled) {
+    g_trackingEnabled.store(enabled);
+    if (!enabled && g_tracker) {
+        [g_tracker resetInteraction];
+    }
+}
+
+extern "C" bool GestureTrackingIsEnabled() {
+    return g_trackingEnabled.load();
+}
+
 extern "C" const char *GestureEngineStatus() {
+    if (!g_trackingEnabled.load()) return "paused";
     switch (g_engineStatus.load()) {
         case kEngineStatusCarina:
             return "Luma Ultra tracking camera active";

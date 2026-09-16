@@ -1,6 +1,6 @@
 # Mighty Mouse 🖱️🕶️
 
-**Mighty Mouse** is a high-performance spatial utility for macOS that enables Apple Vision-powered hand tracking for **VITURE Pro/One** glasses. It allows you to control the macOS cursor using natural hand gestures (point and pinch) directly on top of the **SpaceWalker** app.
+**Mighty Mouse** is a macOS menu-bar utility that uses Apple Vision hand tracking to control the cursor with VITURE glasses cameras. It supports the VITURE Luma Ultra tracking-camera SDK when available and falls back to the glasses' external USB camera when SpaceWalker owns the tracking interface.
 
 By utilizing a relative displacement strategy, this tool anchors your hand interactions to the virtual world while SpaceWalker handles the head-tracking, providing a seamless "spatial" interaction experience without hardware resource conflicts.
 
@@ -9,9 +9,13 @@ By utilizing a relative displacement strategy, this tool anchors your hand inter
 ## ✨ Features
 
 - **Apple Vision Integration:** Leverages the native Vision framework for robust hand pose detection.
-- **SpaceWalker Compatibility:** Designed to run alongside the official SpaceWalker app by avoiding IMU (HID) locks.
-- **Natural Interaction:** - **Point:** Move the system cursor by moving your hand.
-  - **Pinch:** Index-to-thumb pinch triggers a Left Mouse Click (supports dragging).
+- **SpaceWalker Awareness:** The menu bar status reports when SpaceWalker is preventing access to the Luma Ultra tracking camera.
+- **Natural Interaction:**
+  - **Point:** Move the system cursor by moving your hand.
+  - **Pinch:** A short, stabilized index-to-thumb pinch clicks without moving the cursor.
+  - **Drag:** Hold the pinch and intentionally move after the hold threshold.
+  - **Scroll:** Extend the index and middle fingers while curling the ring and little fingers, then move vertically.
+- **Safe Control:** Pause or resume gesture output from the menu bar without quitting the app.
 - **Silicon Optimized:** Native `arm64` support for M1, M2, and M3 Macs.
 - **Clean Console:** Automatically suppresses framework-level warnings for a focused developer experience.
 
@@ -20,7 +24,7 @@ By utilizing a relative displacement strategy, this tool anchors your hand inter
 ## 🛠️ Prerequisites
 
 ### Hardware
-- **VITURE Pro** or **VITURE One** AR Glasses.
+- **VITURE Luma Ultra** glasses for the dedicated stereo tracking-camera path.
 - **Apple Silicon Mac** (M1 or newer).
 
 ### Permissions
@@ -30,6 +34,14 @@ To function, macOS requires you to grant the following permissions in **System S
 3. **Input Monitoring:** To track gestures while the app is in the background.
 
 ---
+
+## 🎮 Gesture Guide
+
+- **Move:** Hold up only your index finger and move it naturally.
+- **Click:** Bring thumb and index together briefly. The pointer is latched during the pinch so small index movement is ignored.
+- **Drag:** Keep the pinch held beyond the click hold and move deliberately.
+- **Scroll:** Hold index and middle fingers up with ring and little fingers curled; move the two-finger pair vertically. A short dwell prevents accidental scrolling.
+- **Pause:** Choose **Pause Tracking** from the hand-icon menu when you need normal mouse control.
 
 ## 🚀 Installation & Build
 
@@ -49,11 +61,13 @@ Ensure your VITURE SDK binaries are located in the following structure:
 
 ### 3. Build and Run
 
-Use the provided `Makefile` to compile and launch the application:
+Use the provided `Makefile` to compile the application:
 
 ```bash
 make
 ```
+
+Use `make run` when launching from the repository during development.
 ---
 
 ### Part 3: Structure and License

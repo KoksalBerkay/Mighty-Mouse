@@ -16,6 +16,7 @@
 @property (nonatomic, strong) NSStatusItem *statusItem;
 @property (nonatomic, strong) NSMenuItem *cameraStatusItem;
 @property (nonatomic, strong) NSMenuItem *inputStatusItem;
+@property (nonatomic, strong) NSMenuItem *trackingToggleItem;
 @end
 
 @implementation MightyMouseAppDelegate
@@ -57,6 +58,14 @@
     [menu addItem:self.inputStatusItem];
 
     [menu addItem:[NSMenuItem separatorItem]];
+
+    self.trackingToggleItem = [[NSMenuItem alloc]
+        initWithTitle:@"Pause Tracking"
+        action:@selector(toggleTracking:)
+        keyEquivalent:@"p"];
+    self.trackingToggleItem.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagOption;
+    self.trackingToggleItem.target = self;
+    [menu addItem:self.trackingToggleItem];
 
     NSMenuItem *settings = [[NSMenuItem alloc]
         initWithTitle:@"Open Privacy & Security Settings…"
@@ -101,6 +110,14 @@
     self.inputStatusItem.title = CGPreflightPostEventAccess()
         ? @"Cursor control: allowed"
         : @"Cursor control: Accessibility permission needed";
+    self.trackingToggleItem.title = GestureTrackingIsEnabled()
+        ? @"Pause Tracking"
+        : @"Resume Tracking";
+}
+
+- (void)toggleTracking:(id)sender {
+    SetGestureTrackingEnabled(!GestureTrackingIsEnabled());
+    [self refreshStatus];
 }
 
 - (void)openPrivacySettings:(id)sender {

@@ -13,6 +13,10 @@ void StopGestureEngine();
 // Returns a short, human-readable status for the menu bar item.
 const char *GestureEngineStatus();
 
+// Enables or pauses cursor/scroll gesture output without stopping the app.
+void SetGestureTrackingEnabled(bool enabled);
+bool GestureTrackingIsEnabled();
+
 #ifdef __cplusplus
 }
 #endif
