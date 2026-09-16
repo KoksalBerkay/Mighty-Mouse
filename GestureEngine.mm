@@ -116,6 +116,7 @@ static int FindVitureProductID() {
 @property (nonatomic, assign) BOOL usingCarina;
 @property (nonatomic, assign) NSInteger pinchState;
 @property (nonatomic, assign) CFAbsoluteTime pinchStartTime;
+@property (nonatomic, assign) CFAbsoluteTime pinchLockoutUntil;
 @property (nonatomic, assign) CGPoint pinchStartIndex;
 @property (nonatomic, assign) CGPoint pinchAnchor;
 @property (nonatomic, assign) BOOL dragActive;
@@ -138,6 +139,7 @@ static int FindVitureProductID() {
         _usingCarina = NO;
         _pinchState = 0;
         _pinchStartTime = 0.0;
+        _pinchLockoutUntil = 0.0;
         _pinchStartIndex = CGPointZero;
         _pinchAnchor = CGPointZero;
         _dragActive = NO;
@@ -460,10 +462,15 @@ static int FindVitureProductID() {
     // the pinch settles. A short, stable pinch followed by release is a click;
     // a deliberate movement after the drag hold threshold becomes a drag.
     if (isPinchingNow) {
+        if (self.pinchState == kPinchIdle && now < self.pinchLockoutUntil) return;
         if (self.pinchState == kPinchIdle) {
             self.pinchState = kPinchCandidate;
             self.pinchStartTime = now;
             self.pinchStartIndex = indexTip.location;
+            if (!self.hasFirstPos) {
+                self.lastMousePos = [NSEvent mouseLocation];
+                self.hasFirstPos = YES;
+            }
             self.pinchAnchor = self.lastMousePos;
             self.dragActive = NO;
         } else if (self.pinchState == kPinchCandidate &&
@@ -490,6 +497,7 @@ static int FindVitureProductID() {
             [self postMouseEvent:kCGEventLeftMouseUp at:self.lastMousePos];
         } else if (self.pinchState == kPinchArmed) {
             [self postClickAt:self.pinchAnchor];
+            self.pinchLockoutUntil = now + 0.08;
         }
         self.pinchState = kPinchIdle;
         self.pinchStartTime = 0.0;
@@ -538,6 +546,7 @@ static int FindVitureProductID() {
     self.isClicking = NO;
     self.pinchState = kPinchIdle;
     self.pinchStartTime = 0.0;
+    self.pinchLockoutUntil = 0.0;
     self.dragActive = NO;
     self.scrollActive = NO;
     self.scrollStartTime = 0.0;
