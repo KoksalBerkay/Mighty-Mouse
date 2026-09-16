@@ -5,7 +5,6 @@
 
 #include "Preferences.h"
 
-static NSString *const kSettingsDomain = @"com.fankahou.mightymouse";
 static NSString *const kCursorGainKey = @"CursorGain";
 static NSString *const kCursorSmoothingKey = @"CursorSmoothing";
 static NSString *const kCursorDeadzoneKey = @"CursorDeadzone";
