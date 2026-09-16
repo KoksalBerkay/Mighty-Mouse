@@ -15,6 +15,7 @@ struct GestureSettings {
     double dragMovementThreshold;
 
     double scrollSpeed;
+    double scrollAcceleration;
     double scrollSmoothing;
     double scrollActivationDelay;
     double scrollDeadzone;

@@ -14,6 +14,7 @@ static NSString *const kPinchActivationDelayKey = @"PinchActivationDelay";
 static NSString *const kDragHoldDurationKey = @"DragHoldDuration";
 static NSString *const kDragMovementThresholdKey = @"DragMovementThreshold";
 static NSString *const kScrollSpeedKey = @"ScrollSpeed";
+static NSString *const kScrollAccelerationKey = @"ScrollAcceleration";
 static NSString *const kScrollSmoothingKey = @"ScrollSmoothing";
 static NSString *const kScrollActivationDelayKey = @"ScrollActivationDelay";
 static NSString *const kScrollDeadzoneKey = @"ScrollDeadzone";
@@ -33,6 +34,7 @@ GestureSettings DefaultGestureSettings() {
         .dragHoldDuration = 0.35,
         .dragMovementThreshold = 0.045,
         .scrollSpeed = 1.00,
+        .scrollAcceleration = 0.15,
         .scrollSmoothing = 0.32,
         .scrollActivationDelay = 0.22,
         .scrollDeadzone = 0.012,
@@ -57,6 +59,7 @@ static GestureSettings NormalizeSettings(GestureSettings settings) {
     settings.dragMovementThreshold = Clamped(settings.dragMovementThreshold, 0.018, 0.12);
 
     settings.scrollSpeed = Clamped(settings.scrollSpeed, 0.25, 3.0);
+    settings.scrollAcceleration = Clamped(settings.scrollAcceleration, 0.0, 1.0);
     settings.scrollSmoothing = Clamped(settings.scrollSmoothing, 0.12, 0.65);
     settings.scrollActivationDelay = Clamped(settings.scrollActivationDelay, 0.10, 0.50);
     settings.scrollDeadzone = Clamped(settings.scrollDeadzone, 0.004, 0.05);
@@ -74,6 +77,7 @@ static void RegisterDefaults(NSUserDefaults *defaults) {
         kDragHoldDurationKey: @(settings.dragHoldDuration),
         kDragMovementThresholdKey: @(settings.dragMovementThreshold),
         kScrollSpeedKey: @(settings.scrollSpeed),
+        kScrollAccelerationKey: @(settings.scrollAcceleration),
         kScrollSmoothingKey: @(settings.scrollSmoothing),
         kScrollActivationDelayKey: @(settings.scrollActivationDelay),
         kScrollDeadzoneKey: @(settings.scrollDeadzone),
@@ -91,6 +95,7 @@ static GestureSettings ReadSettings(NSUserDefaults *defaults) {
         .dragHoldDuration = [defaults doubleForKey:kDragHoldDurationKey],
         .dragMovementThreshold = [defaults doubleForKey:kDragMovementThresholdKey],
         .scrollSpeed = [defaults doubleForKey:kScrollSpeedKey],
+        .scrollAcceleration = [defaults doubleForKey:kScrollAccelerationKey],
         .scrollSmoothing = [defaults doubleForKey:kScrollSmoothingKey],
         .scrollActivationDelay = [defaults doubleForKey:kScrollActivationDelayKey],
         .scrollDeadzone = [defaults doubleForKey:kScrollDeadzoneKey],
@@ -109,6 +114,7 @@ static void WriteSettings(NSUserDefaults *defaults, GestureSettings settings) {
     [defaults setDouble:settings.dragHoldDuration forKey:kDragHoldDurationKey];
     [defaults setDouble:settings.dragMovementThreshold forKey:kDragMovementThresholdKey];
     [defaults setDouble:settings.scrollSpeed forKey:kScrollSpeedKey];
+    [defaults setDouble:settings.scrollAcceleration forKey:kScrollAccelerationKey];
     [defaults setDouble:settings.scrollSmoothing forKey:kScrollSmoothingKey];
     [defaults setDouble:settings.scrollActivationDelay forKey:kScrollActivationDelayKey];
     [defaults setDouble:settings.scrollDeadzone forKey:kScrollDeadzoneKey];
