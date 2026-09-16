@@ -8,7 +8,7 @@ SIGNING_REQUIREMENT := /private/tmp/mighty_mouse.csreq
 all: build
 
 build:
-	clang++ main.mm GestureEngine.mm Preferences.mm GestureInterpreter.cpp GestureGeometry.cpp -o mighty_mouse \
+	clang++ main.mm GestureEngine.mm Preferences.mm GestureInterpreter.cpp GestureGeometry.cpp CursorMotion.cpp -o mighty_mouse \
 	-fobjc-arc \
     -I./include \
     ./aarch64/libcarina_vio.dylib \
@@ -31,7 +31,7 @@ run: build
 
 test:
 	mkdir -p work
-	clang++ GestureInterpreter.cpp GestureInterpreterTests.cpp GestureGeometry.cpp GestureGeometryTests.cpp -o work/gesture_interpreter_tests -arch arm64
+	clang++ GestureInterpreter.cpp GestureInterpreterTests.cpp GestureGeometry.cpp GestureGeometryTests.cpp CursorMotion.cpp CursorMotionTests.cpp -o work/gesture_interpreter_tests -arch arm64
 	./work/gesture_interpreter_tests
 
 # Sign the local bundle with a stable identifier requirement. Ad-hoc signing

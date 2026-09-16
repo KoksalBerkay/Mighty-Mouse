@@ -4,6 +4,7 @@
 #include <iostream>
 
 void RunGestureGeometryTests();
+void RunCursorMotionTests();
 
 static void Expect(bool condition, const char *message) {
     if (!condition) {
@@ -16,8 +17,8 @@ static GestureSettings TestSettings() {
     GestureSettings settings{};
     settings.cursorGain = 1.60;
     settings.cursorSmoothing = 0.26;
-    settings.cursorDeadzone = 0.003;
-    settings.cursorMaxStep = 220.0;
+    settings.cursorDeadzone = 0.0;
+    settings.cursorMaxStep = 0.0;
     settings.pinchEnterRatio = 0.28;
     settings.pinchExitRatio = 0.42;
     settings.pinchActivationDelay = 0.10;
@@ -100,6 +101,7 @@ int main() {
     TestShortReverseIsIgnored();
     TestClutchCanBeDisabled();
     RunGestureGeometryTests();
+    RunCursorMotionTests();
     std::cout << "Gesture interpreter tests passed" << std::endl;
     return 0;
 }

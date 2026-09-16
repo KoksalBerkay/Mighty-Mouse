@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 
 #include <algorithm>
+#include <cmath>
 #include <mutex>
 
 #include "Preferences.h"
@@ -30,8 +31,11 @@ GestureSettings DefaultGestureSettings() {
     return GestureSettings{
         .cursorGain = 1.60,
         .cursorSmoothing = 0.26,
-        .cursorDeadzone = 0.003,
-        .cursorMaxStep = 220.0,
+        // Zero disables these optional guards. The prior cursor behavior was
+        // direct and responsive; users can opt into extra filtering in the
+        // settings window when their camera needs it.
+        .cursorDeadzone = 0.0,
+        .cursorMaxStep = 0.0,
         .pinchEnterRatio = 0.28,
         .pinchExitRatio = 0.42,
         .pinchActivationDelay = 0.10,
@@ -141,6 +145,16 @@ void LoadGestureSettings() {
     @autoreleasepool {
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
         RegisterDefaults(defaults);
+
+        // Versions before the cursor regression registered these as 0.003 and
+        // 220. Reset only those old untouched defaults once; preserve any
+        // deliberately customized values.
+        double savedDeadzone = [defaults doubleForKey:kCursorDeadzoneKey];
+        double savedMaxStep = [defaults doubleForKey:kCursorMaxStepKey];
+        if (fabs(savedDeadzone - 0.003) < 0.0001 && fabs(savedMaxStep - 220.0) < 0.1) {
+            [defaults setDouble:0.0 forKey:kCursorDeadzoneKey];
+            [defaults setDouble:0.0 forKey:kCursorMaxStepKey];
+        }
         GestureSettings loaded = ReadSettings(defaults);
         std::lock_guard<std::mutex> lock(g_settingsMutex);
         g_settings = loaded;

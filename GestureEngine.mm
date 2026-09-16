@@ -13,6 +13,7 @@
 #include "Preferences.h"
 #include "GestureInterpreter.h"
 #include "GestureGeometry.h"
+#include "CursorMotion.h"
 
 @class HandTracker;
 static HandTracker *g_tracker = nil;
@@ -130,6 +131,7 @@ static int FindVitureProductID() {
 @property (nonatomic, assign) BOOL dragActive;
 @property (nonatomic, assign) CFAbsoluteTime lastHandSeenTime;
 @property (nonatomic, assign) ScrollInterpreter *scrollInterpreter;
+@property (nonatomic, assign) CursorMotion *cursorMotion;
 @property (nonatomic, assign) CGEventSourceRef eventSource;
 @property (nonatomic, assign) CFAbsoluteTime pointingPoseStartTime;
 @property (nonatomic, assign) BOOL pointingPoseActive;
@@ -154,6 +156,7 @@ static int FindVitureProductID() {
         _dragActive = NO;
         _lastHandSeenTime = 0.0;
         _scrollInterpreter = new ScrollInterpreter();
+        _cursorMotion = new CursorMotion();
         _eventSource = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
         _pointingPoseStartTime = 0.0;
         _pointingPoseActive = NO;
@@ -164,6 +167,7 @@ static int FindVitureProductID() {
 
 - (void)dealloc {
     delete _scrollInterpreter;
+    delete _cursorMotion;
     if (_eventSource) CFRelease(_eventSource);
 }
 
@@ -427,13 +431,6 @@ static int FindVitureProductID() {
     BOOL scrollPoseNow = !isPinchingNow && indexExtended && middleExtended &&
                          ringFolded && pinkyFolded && middleTip.confidence >= 0.45;
 
-    BOOL middleFolded = FingerIsFolded(hand,
-                                       VNHumanHandPoseObservationJointNameMiddleTip,
-                                       VNHumanHandPoseObservationJointNameMiddlePIP,
-                                       VNHumanHandPoseObservationJointNameMiddleMCP);
-    BOOL pointingPoseNow = !isPinchingNow && indexExtended && middleFolded &&
-                           ringFolded && pinkyFolded;
-
     CGPoint scrollPoint = indexTip
         ? (middleTip
         ? CGPointMake((indexTip.location.x + middleTip.location.x) / 2.0,
@@ -502,19 +499,11 @@ static int FindVitureProductID() {
         return;
     }
 
-    if (!pointingPoseNow || indexTip.confidence < minimumIndexConfidence) {
-        self.pointingPoseStartTime = 0.0;
-        self.pointingPoseActive = NO;
-        return;
-    }
-    if (!self.pointingPoseActive) {
-        if (self.pointingPoseStartTime == 0.0) {
-            self.pointingPoseStartTime = now;
-            return;
-        }
-        if (now - self.pointingPoseStartTime < 0.08) return;
-        self.pointingPoseActive = YES;
-    }
+    // Keep cursor movement permissive: Vision's index confidence is the
+    // reliable pointing signal, while the stricter finger pose is reserved
+    // for recognizing scroll. Requiring every other finger to be folded made
+    // normal pointing intermittently disappear at different hand angles.
+    if (indexTip.confidence < minimumIndexConfidence) return;
 
     // EDGE-TO-EDGE MAPPING LOGIC. The camera center is 0.5; gain stretches
     // the reachable area while clamping keeps the pointer on-screen.
@@ -531,22 +520,13 @@ static int FindVitureProductID() {
         self.hasFirstPos = YES;
     }
 
-    CGFloat alpha = self.dragActive
-        ? fmin(0.60, settings.cursorSmoothing + 0.10)
-        : settings.cursorSmoothing;
-    CGPoint smoothedPos = CGPointMake((targetX * alpha) + (self.lastMousePos.x * (1.0 - alpha)),
-                                      (targetY * alpha) + (self.lastMousePos.y * (1.0 - alpha)));
-    CGPoint cursorDelta = CGPointMake(smoothedPos.x - self.lastMousePos.x,
-                                      smoothedPos.y - self.lastMousePos.y);
-    CGFloat cursorDistance = hypot(cursorDelta.x, cursorDelta.y);
-    CGFloat cursorDeadzonePixels = settings.cursorDeadzone *
-                                   fmin(self.screenSize.width, self.screenSize.height);
-    if (cursorDistance <= cursorDeadzonePixels) return;
-    if (settings.cursorMaxStep > 0.0 && cursorDistance > settings.cursorMaxStep) {
-        CGFloat scale = settings.cursorMaxStep / cursorDistance;
-        smoothedPos = CGPointMake(self.lastMousePos.x + cursorDelta.x * scale,
-                                  self.lastMousePos.y + cursorDelta.y * scale);
-    }
+    CursorMotionResult motion = self.cursorMotion->Update(
+        CursorPoint{targetX, targetY},
+        fmin(self.screenSize.width, self.screenSize.height),
+        settings,
+        self.dragActive);
+    if (!motion.moved) return;
+    CGPoint smoothedPos = CGPointMake(motion.point.x, motion.point.y);
     self.lastMousePos = smoothedPos;
 
     CGEventType type = self.dragActive ? kCGEventLeftMouseDragged : kCGEventMouseMoved;
@@ -563,6 +543,7 @@ static int FindVitureProductID() {
     self.pinchLockoutUntil = 0.0;
     self.dragActive = NO;
     self.scrollInterpreter->Reset();
+    self.cursorMotion->Reset();
     self.pointingPoseStartTime = 0.0;
     self.pointingPoseActive = NO;
     self.lastHandSeenTime = 0.0;
