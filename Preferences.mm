@@ -22,6 +22,7 @@ static NSString *const kScrollActivationDelayKey = @"ScrollActivationDelay";
 static NSString *const kScrollDeadzoneKey = @"ScrollDeadzone";
 static NSString *const kInvertScrollKey = @"InvertScroll";
 static NSString *const kScrollClutchEnabledKey = @"ScrollClutchEnabled";
+static NSString *const kScrollPoseSensitivityKey = @"ScrollPoseSensitivity";
 
 static std::mutex g_settingsMutex;
 static GestureSettings g_settings = {};
@@ -48,6 +49,7 @@ GestureSettings DefaultGestureSettings() {
         .scrollDeadzone = 0.012,
         .invertScroll = false,
         .scrollClutchEnabled = true,
+        .scrollPoseSensitivity = 0.50,
     };
 }
 
@@ -74,6 +76,7 @@ static GestureSettings NormalizeSettings(GestureSettings settings) {
     settings.scrollSmoothing = Clamped(settings.scrollSmoothing, 0.12, 0.65);
     settings.scrollActivationDelay = Clamped(settings.scrollActivationDelay, 0.10, 0.50);
     settings.scrollDeadzone = Clamped(settings.scrollDeadzone, 0.004, 0.05);
+    settings.scrollPoseSensitivity = Clamped(settings.scrollPoseSensitivity, 0.0, 1.0);
     return settings;
 }
 
@@ -96,6 +99,7 @@ static void RegisterDefaults(NSUserDefaults *defaults) {
         kScrollDeadzoneKey: @(settings.scrollDeadzone),
         kInvertScrollKey: @(settings.invertScroll),
         kScrollClutchEnabledKey: @(settings.scrollClutchEnabled),
+        kScrollPoseSensitivityKey: @(settings.scrollPoseSensitivity),
     }];
 }
 
@@ -117,6 +121,7 @@ static GestureSettings ReadSettings(NSUserDefaults *defaults) {
         .scrollDeadzone = [defaults doubleForKey:kScrollDeadzoneKey],
         .invertScroll = [defaults boolForKey:kInvertScrollKey],
         .scrollClutchEnabled = [defaults boolForKey:kScrollClutchEnabledKey],
+        .scrollPoseSensitivity = [defaults doubleForKey:kScrollPoseSensitivityKey],
     };
     return NormalizeSettings(settings);
 }
@@ -139,6 +144,7 @@ static void WriteSettings(NSUserDefaults *defaults, GestureSettings settings) {
     [defaults setDouble:settings.scrollDeadzone forKey:kScrollDeadzoneKey];
     [defaults setBool:settings.invertScroll forKey:kInvertScrollKey];
     [defaults setBool:settings.scrollClutchEnabled forKey:kScrollClutchEnabledKey];
+    [defaults setDouble:settings.scrollPoseSensitivity forKey:kScrollPoseSensitivityKey];
 }
 
 static id PersistentObjectForKey(NSUserDefaults *defaults, NSString *key) {

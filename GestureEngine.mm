@@ -49,24 +49,24 @@ static GestureLandmark VisionLandmark(VNHumanHandPoseObservation *hand,
     return GestureLandmark{point.location.x, point.location.y, point.confidence};
 }
 
-static BOOL FingerIsExtended(VNHumanHandPoseObservation *hand,
-                             VNRecognizedPointKey tipName,
-                             VNRecognizedPointKey pipName,
-                             VNRecognizedPointKey dipName,
-                             VNRecognizedPointKey mcpName) {
-    return GestureFingerIsExtended(VisionLandmark(hand, tipName),
-                                   VisionLandmark(hand, pipName),
-                                   VisionLandmark(hand, dipName),
-                                   VisionLandmark(hand, mcpName));
+static double FingerExtensionScore(VNHumanHandPoseObservation *hand,
+                                   VNRecognizedPointKey tipName,
+                                   VNRecognizedPointKey pipName,
+                                   VNRecognizedPointKey dipName,
+                                   VNRecognizedPointKey mcpName) {
+    return GestureFingerExtensionScore(VisionLandmark(hand, tipName),
+                                       VisionLandmark(hand, pipName),
+                                       VisionLandmark(hand, dipName),
+                                       VisionLandmark(hand, mcpName));
 }
 
-static BOOL FingerIsFolded(VNHumanHandPoseObservation *hand,
-                           VNRecognizedPointKey tipName,
-                           VNRecognizedPointKey pipName,
-                           VNRecognizedPointKey mcpName) {
-    return GestureFingerIsFolded(VisionLandmark(hand, tipName),
-                                 VisionLandmark(hand, pipName),
-                                 VisionLandmark(hand, mcpName));
+static double FingerFoldScore(VNHumanHandPoseObservation *hand,
+                              VNRecognizedPointKey tipName,
+                              VNRecognizedPointKey pipName,
+                              VNRecognizedPointKey mcpName) {
+    return GestureFingerFoldScore(VisionLandmark(hand, tipName),
+                                  VisionLandmark(hand, pipName),
+                                  VisionLandmark(hand, mcpName));
 }
 
 static void CarinaCameraCallback(char *imageLeft0,
@@ -131,6 +131,7 @@ static int FindVitureProductID() {
 @property (nonatomic, assign) BOOL dragActive;
 @property (nonatomic, assign) CFAbsoluteTime lastHandSeenTime;
 @property (nonatomic, assign) ScrollInterpreter *scrollInterpreter;
+@property (nonatomic, assign) ScrollPoseClassifier *scrollPoseClassifier;
 @property (nonatomic, assign) CursorMotion *cursorMotion;
 @property (nonatomic, assign) CGEventSourceRef eventSource;
 @property (nonatomic, assign) CFAbsoluteTime pointingPoseStartTime;
@@ -156,6 +157,7 @@ static int FindVitureProductID() {
         _dragActive = NO;
         _lastHandSeenTime = 0.0;
         _scrollInterpreter = new ScrollInterpreter();
+        _scrollPoseClassifier = new ScrollPoseClassifier();
         _cursorMotion = new CursorMotion();
         _eventSource = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
         _pointingPoseStartTime = 0.0;
@@ -167,6 +169,7 @@ static int FindVitureProductID() {
 
 - (void)dealloc {
     delete _scrollInterpreter;
+    delete _scrollPoseClassifier;
     delete _cursorMotion;
     if (_eventSource) CFRelease(_eventSource);
 }
@@ -408,28 +411,53 @@ static int FindVitureProductID() {
     VNRecognizedPoint *middlePIP = [hand recognizedPointForJointName:VNHumanHandPoseObservationJointNameMiddlePIP error:nil];
     VNRecognizedPoint *middleDIP = [hand recognizedPointForJointName:VNHumanHandPoseObservationJointNameMiddleDIP error:nil];
     VNRecognizedPoint *middleMCPPoint = [hand recognizedPointForJointName:VNHumanHandPoseObservationJointNameMiddleMCP error:nil];
-    VNRecognizedPoint *ringTip = [hand recognizedPointForJointName:VNHumanHandPoseObservationJointNameRingTip error:nil];
-    VNRecognizedPoint *littleTip = [hand recognizedPointForJointName:VNHumanHandPoseObservationJointNameLittleTip error:nil];
-    BOOL indexExtended = FingerIsExtended(hand,
-                                          VNHumanHandPoseObservationJointNameIndexTip,
-                                          VNHumanHandPoseObservationJointNameIndexPIP,
-                                          VNHumanHandPoseObservationJointNameIndexDIP,
-                                          VNHumanHandPoseObservationJointNameIndexMCP);
-    BOOL middleExtended = FingerIsExtended(hand,
-                                           VNHumanHandPoseObservationJointNameMiddleTip,
-                                           VNHumanHandPoseObservationJointNameMiddlePIP,
-                                           VNHumanHandPoseObservationJointNameMiddleDIP,
-                                           VNHumanHandPoseObservationJointNameMiddleMCP);
-    BOOL ringFolded = FingerIsFolded(hand,
-                                     VNHumanHandPoseObservationJointNameRingTip,
-                                     VNHumanHandPoseObservationJointNameRingPIP,
-                                     VNHumanHandPoseObservationJointNameRingMCP);
-    BOOL pinkyFolded = FingerIsFolded(hand,
-                                      VNHumanHandPoseObservationJointNameLittleTip,
-                                      VNHumanHandPoseObservationJointNameLittlePIP,
-                                      VNHumanHandPoseObservationJointNameLittleMCP);
-    BOOL scrollPoseNow = !isPinchingNow && indexExtended && middleExtended &&
-                         ringFolded && pinkyFolded && middleTip.confidence >= 0.45;
+    // Keep continuous evidence instead of making each finger a hard yes/no.
+    // Vision can move a joint a few pixels between frames, especially when
+    // the hand is diagonal. The classifier adds dwell and release hysteresis
+    // on top of these scores so a borderline two-finger pose does not leak
+    // through as cursor movement.
+    double indexExtensionScore = FingerExtensionScore(
+        hand,
+        VNHumanHandPoseObservationJointNameIndexTip,
+        VNHumanHandPoseObservationJointNameIndexPIP,
+        VNHumanHandPoseObservationJointNameIndexDIP,
+        VNHumanHandPoseObservationJointNameIndexMCP);
+    double middleExtensionScore = FingerExtensionScore(
+        hand,
+        VNHumanHandPoseObservationJointNameMiddleTip,
+        VNHumanHandPoseObservationJointNameMiddlePIP,
+        VNHumanHandPoseObservationJointNameMiddleDIP,
+        VNHumanHandPoseObservationJointNameMiddleMCP);
+    double ringFoldScore = FingerFoldScore(
+        hand,
+        VNHumanHandPoseObservationJointNameRingTip,
+        VNHumanHandPoseObservationJointNameRingPIP,
+        VNHumanHandPoseObservationJointNameRingMCP);
+    double littleFoldScore = FingerFoldScore(
+        hand,
+        VNHumanHandPoseObservationJointNameLittleTip,
+        VNHumanHandPoseObservationJointNameLittlePIP,
+        VNHumanHandPoseObservationJointNameLittleMCP);
+
+    bool scrollPoseNow = false;
+    bool scrollIntentNow = false;
+    if (isPinchingNow) {
+        // A pinch is reserved for click/drag and should also force a fresh
+        // two-finger acquisition after a scroll clutch.
+        self.scrollPoseClassifier->Reset();
+    } else {
+        ScrollPoseEvidence evidence{
+            indexExtensionScore,
+            middleExtensionScore,
+            ringFoldScore,
+            littleFoldScore,
+        };
+        scrollPoseNow = self.scrollPoseClassifier->Update(
+            evidence,
+            static_cast<double>(now),
+            settings.scrollPoseSensitivity);
+        scrollIntentNow = self.scrollPoseClassifier->IsIntentLikely();
+    }
 
     CGPoint scrollPoint = indexTip
         ? (middleTip
@@ -441,12 +469,12 @@ static int FindVitureProductID() {
         static_cast<double>(now),
         true,
         static_cast<bool>(scrollPoseNow),
-        static_cast<bool>(isPinchingNow),
+        static_cast<bool>(isPinchingNow && self.scrollInterpreter->IsScrolling()),
         GesturePoint{scrollPoint.x, scrollPoint.y},
     };
     int scrollLines = self.scrollInterpreter->ProcessFrame(scrollFrame, settings);
     if (scrollLines != 0) [self postScrollLines:scrollLines];
-    if (self.scrollInterpreter->IsEngaged()) {
+    if (self.scrollInterpreter->IsEngaged() || scrollIntentNow) {
         self.pointingPoseStartTime = 0.0;
         self.pointingPoseActive = NO;
         return;
@@ -543,6 +571,7 @@ static int FindVitureProductID() {
     self.pinchLockoutUntil = 0.0;
     self.dragActive = NO;
     self.scrollInterpreter->Reset();
+    self.scrollPoseClassifier->Reset();
     self.cursorMotion->Reset();
     self.pointingPoseStartTime = 0.0;
     self.pointingPoseActive = NO;

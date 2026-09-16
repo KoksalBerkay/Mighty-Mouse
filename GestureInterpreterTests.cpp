@@ -30,11 +30,52 @@ static GestureSettings TestSettings() {
     settings.scrollSpeed = 1.0;
     settings.scrollAcceleration = 0.0;
     settings.scrollClutchEnabled = true;
+    settings.scrollPoseSensitivity = 0.50;
     return settings;
 }
 
 static ScrollFrame Frame(double time, double y, bool scroll = true, bool clutch = false) {
     return ScrollFrame{time, true, scroll, clutch, GesturePoint{0.5, y}};
+}
+
+static ScrollPoseEvidence PoseEvidence(double index,
+                                       double middle,
+                                       double ring,
+                                       double little) {
+    return ScrollPoseEvidence{index, middle, ring, little};
+}
+
+static void TestScrollPoseClassifierUsesStableEvidence() {
+    ScrollPoseClassifier classifier;
+
+    Expect(!classifier.Update(PoseEvidence(0.92, 0.88, 0.78, 0.74), 0.00, 0.50),
+           "two-finger pose should dwell before confirmation");
+    Expect(classifier.IsIntentLikely(),
+           "strong two-finger evidence should suppress cursor during dwell");
+    Expect(!classifier.Update(PoseEvidence(0.78, 0.84, 0.62, 0.66), 0.05, 0.50),
+           "two-finger pose should remain a candidate during dwell");
+    Expect(classifier.Update(PoseEvidence(0.86, 0.82, 0.70, 0.68), 0.11, 0.50),
+           "stable two-finger evidence should confirm after dwell");
+    Expect(classifier.IsConfirmed(), "classifier should report a confirmed pose");
+}
+
+static void TestScrollPoseClassifierRejectsOpenHand() {
+    ScrollPoseClassifier classifier;
+    Expect(!classifier.Update(PoseEvidence(0.92, 0.90, 0.05, 0.04), 0.00, 0.50),
+           "open hand should not confirm as a two-finger pose");
+    Expect(!classifier.IsIntentLikely(),
+           "open hand should not suppress normal cursor movement");
+}
+
+static void TestScrollPoseClassifierReleasesWithHysteresis() {
+    ScrollPoseClassifier classifier;
+    classifier.Update(PoseEvidence(0.92, 0.90, 0.82, 0.80), 0.00, 0.50);
+    Expect(classifier.Update(PoseEvidence(0.92, 0.90, 0.82, 0.80), 0.11, 0.50),
+           "classifier should confirm before testing release hysteresis");
+    Expect(classifier.Update(PoseEvidence(0.40, 0.38, 0.10, 0.10), 0.16, 0.50),
+           "one noisy frame should not release the scroll pose");
+    Expect(!classifier.Update(PoseEvidence(0.40, 0.38, 0.10, 0.10), 0.33, 0.50),
+           "sustained loss of pose should release after hysteresis");
 }
 
 static void TestActivationAndNoise() {
@@ -96,6 +137,9 @@ static void TestClutchCanBeDisabled() {
 }
 
 int main() {
+    TestScrollPoseClassifierUsesStableEvidence();
+    TestScrollPoseClassifierRejectsOpenHand();
+    TestScrollPoseClassifierReleasesWithHysteresis();
     TestActivationAndNoise();
     TestClutchRebasesAfterBoundary();
     TestShortReverseIsIgnored();

@@ -11,6 +11,84 @@ static int Sign(double value) {
     return value < 0.0 ? -1 : (value > 0.0 ? 1 : 0);
 }
 
+ScrollPoseClassifier::ScrollPoseClassifier() {
+    Reset();
+}
+
+void ScrollPoseClassifier::Reset() {
+    confirmed_ = false;
+    candidateActive_ = false;
+    releaseActive_ = false;
+    candidateStartTime_ = 0.0;
+    releaseStartTime_ = 0.0;
+    score_ = 0.0;
+    intentThreshold_ = 0.30;
+    intentLikely_ = false;
+}
+
+bool ScrollPoseClassifier::Update(const ScrollPoseEvidence &evidence,
+                                  double timestamp,
+                                  double sensitivity) {
+    double pairScore = std::min(evidence.indexExtension, evidence.middleExtension);
+    double foldScore = std::min(evidence.ringFold, evidence.littleFold);
+    score_ = 0.65 * pairScore + 0.35 * foldScore;
+
+    double normalizedSensitivity = Clamp(sensitivity, 0.0, 1.0);
+    double acquireThreshold = 0.44 + normalizedSensitivity * 0.12;
+    double releaseThreshold = acquireThreshold - 0.16;
+    intentThreshold_ = acquireThreshold - 0.20;
+    bool enoughFingerEvidence = pairScore >= 0.34 && foldScore >= 0.12;
+    intentLikely_ = enoughFingerEvidence && score_ >= intentThreshold_;
+
+    if (confirmed_) {
+        if (enoughFingerEvidence && score_ >= releaseThreshold) {
+            releaseActive_ = false;
+            intentLikely_ = true;
+            return true;
+        }
+        if (!releaseActive_) {
+            releaseActive_ = true;
+            releaseStartTime_ = timestamp;
+        }
+        if (timestamp - releaseStartTime_ < 0.16) {
+            intentLikely_ = true;
+            return true;
+        }
+        confirmed_ = false;
+        releaseActive_ = false;
+        candidateActive_ = false;
+        intentLikely_ = false;
+        return false;
+    }
+
+    if (enoughFingerEvidence && score_ >= acquireThreshold) {
+        if (!candidateActive_) {
+            candidateActive_ = true;
+            candidateStartTime_ = timestamp;
+        }
+        if (timestamp - candidateStartTime_ >= 0.10) {
+            confirmed_ = true;
+            candidateActive_ = false;
+            return true;
+        }
+    } else {
+        candidateActive_ = false;
+    }
+    return false;
+}
+
+bool ScrollPoseClassifier::IsIntentLikely() const {
+    return confirmed_ || candidateActive_ || intentLikely_;
+}
+
+bool ScrollPoseClassifier::IsConfirmed() const {
+    return confirmed_;
+}
+
+double ScrollPoseClassifier::Score() const {
+    return score_;
+}
+
 ScrollInterpreter::ScrollInterpreter() {
     Reset();
 }

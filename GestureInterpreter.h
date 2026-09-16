@@ -15,6 +15,39 @@ struct ScrollFrame {
     GesturePoint point;
 };
 
+struct ScrollPoseEvidence {
+    double indexExtension;
+    double middleExtension;
+    double ringFold;
+    double littleFold;
+};
+
+// Converts noisy per-finger evidence into a stable two-finger intent. It is
+// intentionally separate from ScrollInterpreter so uncertain poses can stop
+// cursor movement without prematurely emitting scroll events.
+class ScrollPoseClassifier {
+public:
+    ScrollPoseClassifier();
+
+    bool Update(const ScrollPoseEvidence &evidence,
+                double timestamp,
+                double sensitivity);
+    void Reset();
+    bool IsIntentLikely() const;
+    bool IsConfirmed() const;
+    double Score() const;
+
+private:
+    bool confirmed_;
+    bool candidateActive_;
+    bool releaseActive_;
+    double candidateStartTime_;
+    double releaseStartTime_;
+    double score_;
+    double intentThreshold_;
+    bool intentLikely_;
+};
+
 // Converts a stable two-finger pose into relative scroll lines. This class is
 // deliberately independent of Vision and CoreGraphics so its state transitions
 // can be tested with deterministic landmark traces.
@@ -46,4 +79,3 @@ private:
     int lastDirection_;
     double reversalAccumulator_;
 };
-
