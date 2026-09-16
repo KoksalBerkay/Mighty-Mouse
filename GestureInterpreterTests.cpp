@@ -28,6 +28,7 @@ static GestureSettings TestSettings() {
     settings.scrollSmoothing = 0.65;
     settings.scrollSpeed = 1.0;
     settings.scrollAcceleration = 0.0;
+    settings.scrollClutchEnabled = true;
     return settings;
 }
 
@@ -81,10 +82,23 @@ static void TestShortReverseIsIgnored() {
            "small reversal should be ignored");
 }
 
+static void TestClutchCanBeDisabled() {
+    ScrollInterpreter interpreter;
+    GestureSettings settings = TestSettings();
+    settings.scrollClutchEnabled = false;
+    interpreter.ProcessFrame(Frame(0.00, 0.50), settings);
+    interpreter.ProcessFrame(Frame(0.21, 0.50), settings);
+    Expect(interpreter.IsScrolling(), "scroll should activate before testing clutch preference");
+    Expect(interpreter.ProcessFrame(Frame(0.25, 0.50, false, true), settings) == 0,
+           "disabled clutch should not emit scroll output");
+    Expect(!interpreter.IsEngaged(), "disabled clutch should exit the scroll session");
+}
+
 int main() {
     TestActivationAndNoise();
     TestClutchRebasesAfterBoundary();
     TestShortReverseIsIgnored();
+    TestClutchCanBeDisabled();
     RunGestureGeometryTests();
     std::cout << "Gesture interpreter tests passed" << std::endl;
     return 0;

@@ -46,7 +46,7 @@ int ScrollInterpreter::ProcessFrame(const ScrollFrame &frame,
 
     // A pinch while scrolling is a clutch, not a click. It freezes output and
     // forces the next two-finger pose to establish a new movement baseline.
-    if (frame.clutchPose && state_ != State::Idle) {
+    if (frame.clutchPose && settings.scrollClutchEnabled && state_ != State::Idle) {
         state_ = State::Clutched;
         hasFilteredPoint_ = false;
         scrollRemainder_ = 0.0;
@@ -136,4 +136,3 @@ int ScrollInterpreter::ProcessFrame(const ScrollFrame &frame,
     if (scrollLines != 0) scrollRemainder_ -= scrollLines;
     return scrollLines;
 }
-

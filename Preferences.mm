@@ -21,6 +21,7 @@ static NSString *const kScrollSmoothingKey = @"ScrollSmoothing";
 static NSString *const kScrollActivationDelayKey = @"ScrollActivationDelay";
 static NSString *const kScrollDeadzoneKey = @"ScrollDeadzone";
 static NSString *const kInvertScrollKey = @"InvertScroll";
+static NSString *const kScrollClutchEnabledKey = @"ScrollClutchEnabled";
 
 static std::mutex g_settingsMutex;
 static GestureSettings g_settings = {};
@@ -43,6 +44,7 @@ GestureSettings DefaultGestureSettings() {
         .scrollActivationDelay = 0.22,
         .scrollDeadzone = 0.012,
         .invertScroll = false,
+        .scrollClutchEnabled = true,
     };
 }
 
@@ -90,6 +92,7 @@ static void RegisterDefaults(NSUserDefaults *defaults) {
         kScrollActivationDelayKey: @(settings.scrollActivationDelay),
         kScrollDeadzoneKey: @(settings.scrollDeadzone),
         kInvertScrollKey: @(settings.invertScroll),
+        kScrollClutchEnabledKey: @(settings.scrollClutchEnabled),
     }];
 }
 
@@ -110,6 +113,7 @@ static GestureSettings ReadSettings(NSUserDefaults *defaults) {
         .scrollActivationDelay = [defaults doubleForKey:kScrollActivationDelayKey],
         .scrollDeadzone = [defaults doubleForKey:kScrollDeadzoneKey],
         .invertScroll = [defaults boolForKey:kInvertScrollKey],
+        .scrollClutchEnabled = [defaults boolForKey:kScrollClutchEnabledKey],
     };
     return NormalizeSettings(settings);
 }
@@ -131,6 +135,7 @@ static void WriteSettings(NSUserDefaults *defaults, GestureSettings settings) {
     [defaults setDouble:settings.scrollActivationDelay forKey:kScrollActivationDelayKey];
     [defaults setDouble:settings.scrollDeadzone forKey:kScrollDeadzoneKey];
     [defaults setBool:settings.invertScroll forKey:kInvertScrollKey];
+    [defaults setBool:settings.scrollClutchEnabled forKey:kScrollClutchEnabledKey];
 }
 
 void LoadGestureSettings() {

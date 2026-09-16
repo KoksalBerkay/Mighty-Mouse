@@ -25,6 +25,7 @@ enum {
     kQuickScrollSpeed = 3,
     kQuickScrollDirection = 4,
     kQuickScrollAcceleration = 5,
+    kQuickScrollClutch = 6,
 };
 
 enum {
@@ -63,12 +64,14 @@ enum {
 @property (nonatomic, strong) NSSlider *scrollActivationSlider;
 @property (nonatomic, strong) NSSlider *scrollDeadzoneSlider;
 @property (nonatomic, strong) NSButton *invertScrollButton;
+@property (nonatomic, strong) NSButton *scrollClutchButton;
 @property (nonatomic, strong) NSMutableDictionary *settingValueLabels;
 @property (nonatomic, strong) NSArray *cursorGainPresetItems;
 @property (nonatomic, strong) NSArray *cursorSmoothingPresetItems;
 @property (nonatomic, strong) NSArray *scrollSpeedPresetItems;
 @property (nonatomic, strong) NSArray *scrollAccelerationPresetItems;
 @property (nonatomic, strong) NSArray *scrollDirectionPresetItems;
+@property (nonatomic, strong) NSArray *scrollClutchPresetItems;
 @end
 
 @implementation MightyMouseAppDelegate
@@ -144,6 +147,11 @@ enum {
                                                             kind:kQuickScrollAcceleration
                                                           values:@[@0.00, @0.15, @0.35]
                                                           labels:@[@"Off", @"Mild", @"Strong"]];
+    self.scrollClutchPresetItems = [self addPresetSubmenuTo:quickMenu
+                                                    title:@"Scroll Clutch"
+                                                     kind:kQuickScrollClutch
+                                                   values:@[@NO, @YES]
+                                                   labels:@[@"Off", @"On"]];
     self.scrollDirectionPresetItems = [self addPresetSubmenuTo:quickMenu
                                                           title:@"Scroll Direction"
                                                            kind:kQuickScrollDirection
@@ -263,6 +271,10 @@ enum {
         item.state = [item.representedObject boolValue] == settings.invertScroll
             ? NSControlStateValueOn : NSControlStateValueOff;
     }
+    for (NSMenuItem *item in self.scrollClutchPresetItems) {
+        item.state = [item.representedObject boolValue] == settings.scrollClutchEnabled
+            ? NSControlStateValueOn : NSControlStateValueOff;
+    }
 }
 
 - (void)applyQuickSetting:(NSMenuItem *)sender {
@@ -283,6 +295,9 @@ enum {
             break;
         case kQuickScrollDirection:
             settings.invertScroll = [sender.representedObject boolValue];
+            break;
+        case kQuickScrollClutch:
+            settings.scrollClutchEnabled = [sender.representedObject boolValue];
             break;
     }
     SaveGestureSettings(settings);
@@ -497,18 +512,24 @@ enum {
     self.invertScrollButton = [NSButton checkboxWithTitle:@"Reverse scroll direction"
                                                     target:self
                                                     action:@selector(settingsChanged:)];
-    self.invertScrollButton.frame = NSMakeRect(24.0, 90.0, 250.0, 24.0);
+    self.invertScrollButton.frame = NSMakeRect(24.0, 102.0, 250.0, 24.0);
     [content addSubview:self.invertScrollButton];
+
+    self.scrollClutchButton = [NSButton checkboxWithTitle:@"Use pinch as scroll clutch"
+                                                    target:self
+                                                    action:@selector(settingsChanged:)];
+    self.scrollClutchButton.frame = NSMakeRect(24.0, 76.0, 250.0, 24.0);
+    [content addSubview:self.scrollClutchButton];
 
     NSButton *reset = [NSButton buttonWithTitle:@"Restore Defaults"
                                           target:self
                                           action:@selector(resetSettings:)];
-    reset.frame = NSMakeRect(24.0, 40.0, 150.0, 32.0);
+    reset.frame = NSMakeRect(24.0, 32.0, 150.0, 32.0);
     [content addSubview:reset];
 
     NSTextField *help = [NSTextField labelWithString:
         @"Pinch and release to click. Hold and move deliberately to drag."];
-    help.frame = NSMakeRect(190.0, 44.0, 300.0, 24.0);
+    help.frame = NSMakeRect(190.0, 36.0, 300.0, 24.0);
     help.textColor = [NSColor secondaryLabelColor];
     [content addSubview:help];
     [self refreshSettingsControls];
@@ -531,6 +552,8 @@ enum {
     self.scrollActivationSlider.doubleValue = settings.scrollActivationDelay;
     self.scrollDeadzoneSlider.doubleValue = settings.scrollDeadzone;
     self.invertScrollButton.state = settings.invertScroll
+        ? NSControlStateValueOn : NSControlStateValueOff;
+    self.scrollClutchButton.state = settings.scrollClutchEnabled
         ? NSControlStateValueOn : NSControlStateValueOff;
     [self refreshSettingValueLabels];
 }
@@ -582,6 +605,8 @@ enum {
         default:
             if (sender == self.invertScrollButton) {
                 settings.invertScroll = self.invertScrollButton.state == NSControlStateValueOn;
+            } else if (sender == self.scrollClutchButton) {
+                settings.scrollClutchEnabled = self.scrollClutchButton.state == NSControlStateValueOn;
             } else {
                 return;
             }

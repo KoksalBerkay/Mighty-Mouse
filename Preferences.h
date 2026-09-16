@@ -22,6 +22,7 @@ struct GestureSettings {
     double scrollActivationDelay;
     double scrollDeadzone;
     bool invertScroll;
+    bool scrollClutchEnabled;
 };
 
 GestureSettings DefaultGestureSettings();
