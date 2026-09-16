@@ -8,9 +8,14 @@
 #import <Cocoa/Cocoa.h>
 #import <AVFoundation/AVFoundation.h>
 #import <CoreGraphics/CoreGraphics.h>
+#import <ApplicationServices/ApplicationServices.h>
 #endif
 
 #include "GestureEngine.h"
+
+static BOOL AccessibilityPermissionGranted() {
+    return AXIsProcessTrusted();
+}
 
 @interface MightyMouseAppDelegate : NSObject <NSApplicationDelegate, NSMenuDelegate>
 @property (nonatomic, strong) NSStatusItem *statusItem;
@@ -107,7 +112,7 @@
             break;
     }
 
-    self.inputStatusItem.title = CGPreflightPostEventAccess()
+    self.inputStatusItem.title = AccessibilityPermissionGranted()
         ? @"Cursor control: allowed"
         : @"Cursor control: Accessibility permission needed";
     self.trackingToggleItem.title = GestureTrackingIsEnabled()
@@ -146,12 +151,15 @@ int main() {
         std::cout << "Camera authorization: "
                   << (long)[AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo]
                   << std::endl;
-        std::cout << "Accessibility post-event access: "
-                  << (CGPreflightPostEventAccess() ? "allowed" : "needed")
+        std::cout << "Accessibility trust: "
+                  << (AccessibilityPermissionGranted() ? "allowed" : "needed")
                   << std::endl;
-        if (!CGPreflightPostEventAccess()) {
+        if (!AccessibilityPermissionGranted()) {
             std::cout << "Requesting Accessibility permission..." << std::endl;
-            CGRequestPostEventAccess();
+            NSDictionary *options = @{
+                (__bridge NSString *)kAXTrustedCheckOptionPrompt: @YES
+            };
+            AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
         }
         StartGestureEngine();
         [app run];

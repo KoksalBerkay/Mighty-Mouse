@@ -17,6 +17,7 @@ build:
     -framework CoreMedia \
     -framework CoreVideo \
     -framework CoreFoundation \
+    -framework ApplicationServices \
     -framework IOKit \
     -framework AppKit \
     -arch arm64
