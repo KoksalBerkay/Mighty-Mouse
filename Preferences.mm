@@ -59,7 +59,7 @@ static GestureSettings NormalizeSettings(GestureSettings settings) {
     settings.cursorGain = Clamped(settings.cursorGain, 1.0, 2.6);
     settings.cursorSmoothing = Clamped(settings.cursorSmoothing, 0.12, 0.55);
     settings.cursorDeadzone = Clamped(settings.cursorDeadzone, 0.0, 0.025);
-    settings.cursorMaxStep = Clamped(settings.cursorMaxStep, 40.0, 600.0);
+    settings.cursorMaxStep = Clamped(settings.cursorMaxStep, 0.0, 600.0);
 
     settings.pinchEnterRatio = Clamped(settings.pinchEnterRatio, 0.18, 0.40);
     settings.pinchExitRatio = Clamped(settings.pinchExitRatio,

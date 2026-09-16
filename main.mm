@@ -437,7 +437,7 @@ enum {
     self.cursorMaxStepSlider = [self addSliderRowToView:content
                                                  title:@"Maximum step"
                                                     tag:kSettingCursorMaxStep
-                                                minimum:40.0
+                                                minimum:0.0
                                                 maximum:600.0
                                                   value:settings.cursorMaxStep
                                                       y:530.0];
