@@ -10,6 +10,7 @@
 #include "viture_device_carina.h"
 #include "GestureEngine.h"
 #include "Preferences.h"
+#include "GestureInterpreter.h"
 
 @class HandTracker;
 static HandTracker *g_tracker = nil;
@@ -37,28 +38,58 @@ static CGFloat DistanceBetweenPoints(VNRecognizedPoint *first, VNRecognizedPoint
                  first.location.y - second.location.y);
 }
 
+static CGFloat AngleAtJoint(VNRecognizedPoint *first,
+                            VNRecognizedPoint *joint,
+                            VNRecognizedPoint *last) {
+    if (!first || !joint || !last) return 0.0;
+    CGFloat firstX = first.location.x - joint.location.x;
+    CGFloat firstY = first.location.y - joint.location.y;
+    CGFloat lastX = last.location.x - joint.location.x;
+    CGFloat lastY = last.location.y - joint.location.y;
+    CGFloat firstLength = hypot(firstX, firstY);
+    CGFloat lastLength = hypot(lastX, lastY);
+    if (firstLength < 0.001 || lastLength < 0.001) return 0.0;
+    CGFloat cosine = (firstX * lastX + firstY * lastY) / (firstLength * lastLength);
+    cosine = fmax(-1.0, fmin(1.0, cosine));
+    return acos(cosine) * 180.0 / M_PI;
+}
+
 static BOOL FingerIsExtended(VNHumanHandPoseObservation *hand,
                              VNRecognizedPointKey tipName,
                              VNRecognizedPointKey pipName,
-                             VNRecognizedPoint *wrist) {
+                             VNRecognizedPointKey dipName,
+                             VNRecognizedPointKey mcpName) {
     VNRecognizedPoint *tip = [hand recognizedPointForJointName:tipName error:nil];
     VNRecognizedPoint *pip = [hand recognizedPointForJointName:pipName error:nil];
-    if (!tip || !pip || !wrist || tip.confidence < 0.45 || pip.confidence < 0.40 || wrist.confidence < 0.35) {
+    VNRecognizedPoint *dip = [hand recognizedPointForJointName:dipName error:nil];
+    VNRecognizedPoint *mcp = [hand recognizedPointForJointName:mcpName error:nil];
+    if (!tip || !pip || !dip || !mcp ||
+        tip.confidence < 0.45 || pip.confidence < 0.40 ||
+        dip.confidence < 0.40 || mcp.confidence < 0.35) {
         return NO;
     }
-    return DistanceBetweenPoints(tip, wrist) > DistanceBetweenPoints(pip, wrist) * 1.12;
+    CGFloat pipAngle = AngleAtJoint(mcp, pip, tip);
+    CGFloat dipAngle = AngleAtJoint(pip, dip, tip);
+    CGFloat extension = DistanceBetweenPoints(tip, mcp) /
+                        fmax(0.01, DistanceBetweenPoints(pip, mcp));
+    return pipAngle >= 142.0 && dipAngle >= 135.0 && extension >= 1.16;
 }
 
 static BOOL FingerIsFolded(VNHumanHandPoseObservation *hand,
                            VNRecognizedPointKey tipName,
                            VNRecognizedPointKey pipName,
-                           VNRecognizedPoint *wrist) {
+                           VNRecognizedPointKey mcpName) {
     VNRecognizedPoint *tip = [hand recognizedPointForJointName:tipName error:nil];
     VNRecognizedPoint *pip = [hand recognizedPointForJointName:pipName error:nil];
-    if (!tip || !pip || !wrist || tip.confidence < 0.35 || pip.confidence < 0.30 || wrist.confidence < 0.30) {
+    VNRecognizedPoint *mcp = [hand recognizedPointForJointName:mcpName error:nil];
+    if (!tip || !pip || !mcp || tip.confidence < 0.35 ||
+        pip.confidence < 0.30 || mcp.confidence < 0.30) {
         return NO;
     }
-    return DistanceBetweenPoints(tip, wrist) <= DistanceBetweenPoints(pip, wrist) * 1.12;
+    CGFloat pipAngle = AngleAtJoint(mcp, pip, tip);
+    CGFloat tipToMCP = DistanceBetweenPoints(tip, mcp);
+    CGFloat pipToMCP = DistanceBetweenPoints(pip, mcp);
+    return pipAngle <= 150.0 || tipToMCP <= pipToMCP * 1.18;
 }
 
 static void CarinaCameraCallback(char *imageLeft0,
@@ -121,11 +152,9 @@ static int FindVitureProductID() {
 @property (nonatomic, assign) CGPoint pinchAnchor;
 @property (nonatomic, assign) BOOL dragActive;
 @property (nonatomic, assign) CFAbsoluteTime lastHandSeenTime;
-@property (nonatomic, assign) BOOL scrollActive;
-@property (nonatomic, assign) CFAbsoluteTime scrollStartTime;
-@property (nonatomic, assign) CGPoint lastScrollPoint;
-@property (nonatomic, assign) BOOL hasScrollPoint;
-@property (nonatomic, assign) CGFloat scrollRemainder;
+@property (nonatomic, assign) ScrollInterpreter *scrollInterpreter;
+@property (nonatomic, assign) CFAbsoluteTime pointingPoseStartTime;
+@property (nonatomic, assign) BOOL pointingPoseActive;
 @end
 
 @implementation HandTracker
@@ -144,14 +173,16 @@ static int FindVitureProductID() {
         _pinchAnchor = CGPointZero;
         _dragActive = NO;
         _lastHandSeenTime = 0.0;
-        _scrollActive = NO;
-        _scrollStartTime = 0.0;
-        _lastScrollPoint = CGPointZero;
-        _hasScrollPoint = NO;
-        _scrollRemainder = 0.0;
+        _scrollInterpreter = new ScrollInterpreter();
+        _pointingPoseStartTime = 0.0;
+        _pointingPoseActive = NO;
         _screenSize = CGDisplayBounds(CGMainDisplayID()).size;
     }
     return self;
+}
+
+- (void)dealloc {
+    delete _scrollInterpreter;
 }
 
 - (void)start {
@@ -317,7 +348,7 @@ static int FindVitureProductID() {
     if (request.results.count > 0) {
         self.lastHandSeenTime = CFAbsoluteTimeGetCurrent();
         [self processHand:request.results.firstObject];
-    } else if (self.pinchState != kPinchIdle || self.scrollActive) {
+    } else if (self.pinchState != kPinchIdle || self.scrollInterpreter->IsEngaged()) {
         // Vision occasionally loses the hand for a few frames. Do not leave
         // a drag pressed or a scroll mode latched when that happens.
         CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
@@ -343,12 +374,28 @@ static int FindVitureProductID() {
     [self postMouseEvent:kCGEventLeftMouseUp at:point];
 }
 
+- (void)postScrollLines:(int)lines {
+    if (lines == 0) return;
+    CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
+    if (!source) return;
+    CGEventRef scroll = CGEventCreateScrollWheelEvent(source,
+                                                       kCGScrollEventUnitLine,
+                                                       1,
+                                                       lines);
+    if (scroll) {
+        CGEventPost(kCGHIDEventTap, scroll);
+        CFRelease(scroll);
+    }
+    CFRelease(source);
+}
+
 - (void)processHand:(VNHumanHandPoseObservation *)hand {
     VNRecognizedPoint *indexTip = [hand recognizedPointForJointName:VNHumanHandPoseObservationJointNameIndexTip error:nil];
     VNRecognizedPoint *thumbTip = [hand recognizedPointForJointName:VNHumanHandPoseObservationJointNameThumbTip error:nil];
 
     if (!g_trackingEnabled.load()) return;
     GestureSettings settings = CurrentGestureSettings();
+    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
 
     // Use hand-relative pinch distance so clicking is stable at different
     // distances from the camera. Hysteresis prevents natural fingertip jitter
@@ -367,96 +414,65 @@ static int FindVitureProductID() {
                          thumbTip.confidence >= minimumThumbConfidence &&
                          pinchRatio < (self.pinchState == kPinchIdle ? pinchEnterRatio : pinchExitRatio);
 
-    // A separate two-finger pose gives scrolling its own meaning. Requiring
-    // the ring and pinky to be folded avoids turning an open-hand movement
-    // into an accidental scroll.
+    // Finger geometry is evaluated from local joints rather than wrist
+    // distance. That makes the pose tolerant of diagonal and rotated hands.
+    VNRecognizedPoint *indexPIP = [hand recognizedPointForJointName:VNHumanHandPoseObservationJointNameIndexPIP error:nil];
+    VNRecognizedPoint *indexDIP = [hand recognizedPointForJointName:VNHumanHandPoseObservationJointNameIndexDIP error:nil];
+    VNRecognizedPoint *indexMCP = [hand recognizedPointForJointName:VNHumanHandPoseObservationJointNameIndexMCP error:nil];
     VNRecognizedPoint *middleTip = [hand recognizedPointForJointName:VNHumanHandPoseObservationJointNameMiddleTip error:nil];
+    VNRecognizedPoint *middlePIP = [hand recognizedPointForJointName:VNHumanHandPoseObservationJointNameMiddlePIP error:nil];
+    VNRecognizedPoint *middleDIP = [hand recognizedPointForJointName:VNHumanHandPoseObservationJointNameMiddleDIP error:nil];
+    VNRecognizedPoint *middleMCPPoint = [hand recognizedPointForJointName:VNHumanHandPoseObservationJointNameMiddleMCP error:nil];
+    VNRecognizedPoint *ringTip = [hand recognizedPointForJointName:VNHumanHandPoseObservationJointNameRingTip error:nil];
+    VNRecognizedPoint *littleTip = [hand recognizedPointForJointName:VNHumanHandPoseObservationJointNameLittleTip error:nil];
     BOOL indexExtended = FingerIsExtended(hand,
                                           VNHumanHandPoseObservationJointNameIndexTip,
                                           VNHumanHandPoseObservationJointNameIndexPIP,
-                                          wrist);
+                                          VNHumanHandPoseObservationJointNameIndexDIP,
+                                          VNHumanHandPoseObservationJointNameIndexMCP);
     BOOL middleExtended = FingerIsExtended(hand,
                                            VNHumanHandPoseObservationJointNameMiddleTip,
                                            VNHumanHandPoseObservationJointNameMiddlePIP,
-                                           wrist);
+                                           VNHumanHandPoseObservationJointNameMiddleDIP,
+                                           VNHumanHandPoseObservationJointNameMiddleMCP);
     BOOL ringFolded = FingerIsFolded(hand,
                                      VNHumanHandPoseObservationJointNameRingTip,
                                      VNHumanHandPoseObservationJointNameRingPIP,
-                                     wrist);
+                                     VNHumanHandPoseObservationJointNameRingMCP);
     BOOL pinkyFolded = FingerIsFolded(hand,
                                       VNHumanHandPoseObservationJointNameLittleTip,
                                       VNHumanHandPoseObservationJointNameLittlePIP,
-                                      wrist);
+                                      VNHumanHandPoseObservationJointNameLittleMCP);
     BOOL scrollPoseNow = !isPinchingNow && indexExtended && middleExtended &&
-                         middleTip.confidence >= 0.45 && ringFolded && pinkyFolded;
-    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+                         ringFolded && pinkyFolded && middleTip.confidence >= 0.45;
 
-    if (self.scrollActive) {
-        if (!scrollPoseNow) {
-            self.scrollActive = NO;
-            self.scrollStartTime = 0.0;
-            self.hasScrollPoint = NO;
-            self.scrollRemainder = 0.0;
-            return;
-        }
-        CGPoint rawScrollPoint = CGPointMake((indexTip.location.x + middleTip.location.x) / 2.0,
-                                              (indexTip.location.y + middleTip.location.y) / 2.0);
-        if (!self.hasScrollPoint) {
-            self.lastScrollPoint = rawScrollPoint;
-            self.hasScrollPoint = YES;
-            return;
-        }
-        CGFloat scrollAlpha = settings.scrollSmoothing;
-        CGPoint filteredScrollPoint = CGPointMake(
-            self.lastScrollPoint.x + (rawScrollPoint.x - self.lastScrollPoint.x) * scrollAlpha,
-            self.lastScrollPoint.y + (rawScrollPoint.y - self.lastScrollPoint.y) * scrollAlpha);
-        CGFloat deltaY = filteredScrollPoint.y - self.lastScrollPoint.y;
-        self.lastScrollPoint = filteredScrollPoint;
+    BOOL middleFolded = FingerIsFolded(hand,
+                                       VNHumanHandPoseObservationJointNameMiddleTip,
+                                       VNHumanHandPoseObservationJointNameMiddlePIP,
+                                       VNHumanHandPoseObservationJointNameMiddleMCP);
+    BOOL pointingPoseNow = !isPinchingNow && indexExtended && middleFolded &&
+                           ringFolded && pinkyFolded;
 
-        CGFloat deadzone = settings.scrollDeadzone;
-        CGFloat magnitude = fabs(deltaY);
-        if (magnitude <= deadzone) return;
-        CGFloat usableDelta = copysign(magnitude - deadzone, deltaY);
-
-        // A modest velocity boost makes larger intentional movements useful
-        // without making the slow end of the range jumpy.
-        CGFloat acceleration = 1.0 + fmin(0.75, magnitude * 18.0);
-        CGFloat direction = settings.invertScroll ? -1.0 : 1.0;
-        self.scrollRemainder += usableDelta * 70.0 * settings.scrollSpeed * acceleration * direction;
-        int scrollLines = (int)fmax(-6.0, fmin(6.0, self.scrollRemainder));
-        if (scrollLines != 0) {
-            self.scrollRemainder -= scrollLines;
-            CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
-            if (src) {
-                CGEventRef scroll = CGEventCreateScrollWheelEvent(src,
-                                                                   kCGScrollEventUnitLine,
-                                                                   1,
-                                                                   scrollLines);
-                CGEventPost(kCGHIDEventTap, scroll);
-                CFRelease(scroll);
-                CFRelease(src);
-            }
-        }
+    CGPoint scrollPoint = indexTip
+        ? (middleTip
+        ? CGPointMake((indexTip.location.x + middleTip.location.x) / 2.0,
+                      (indexTip.location.y + middleTip.location.y) / 2.0)
+        : indexTip.location)
+        : CGPointZero;
+    ScrollFrame scrollFrame{
+        static_cast<double>(now),
+        true,
+        static_cast<bool>(scrollPoseNow),
+        static_cast<bool>(isPinchingNow),
+        GesturePoint{scrollPoint.x, scrollPoint.y},
+    };
+    int scrollLines = self.scrollInterpreter->ProcessFrame(scrollFrame, settings);
+    if (scrollLines != 0) [self postScrollLines:scrollLines];
+    if (self.scrollInterpreter->IsEngaged()) {
+        self.pointingPoseStartTime = 0.0;
+        self.pointingPoseActive = NO;
         return;
     }
-
-    if (scrollPoseNow && self.pinchState == kPinchIdle) {
-        CGPoint scrollPoint = CGPointMake((indexTip.location.x + middleTip.location.x) / 2.0,
-                                           (indexTip.location.y + middleTip.location.y) / 2.0);
-        if (self.scrollStartTime == 0.0) {
-            self.scrollStartTime = now;
-            self.lastScrollPoint = scrollPoint;
-            self.hasScrollPoint = YES;
-            self.scrollRemainder = 0.0;
-        } else if (now - self.scrollStartTime >= settings.scrollActivationDelay) {
-            self.scrollActive = YES;
-            self.lastScrollPoint = scrollPoint;
-            self.hasScrollPoint = YES;
-        }
-        return;
-    }
-    self.scrollStartTime = 0.0;
-    self.hasScrollPoint = NO;
 
     // Pinch is a latched interaction. The pointer is held at its anchor while
     // the pinch settles. A short, stable pinch followed by release is a click;
@@ -505,7 +521,19 @@ static int FindVitureProductID() {
         return;
     }
 
-    if (indexTip.confidence < minimumIndexConfidence) return;
+    if (!pointingPoseNow || indexTip.confidence < minimumIndexConfidence) {
+        self.pointingPoseStartTime = 0.0;
+        self.pointingPoseActive = NO;
+        return;
+    }
+    if (!self.pointingPoseActive) {
+        if (self.pointingPoseStartTime == 0.0) {
+            self.pointingPoseStartTime = now;
+            return;
+        }
+        if (now - self.pointingPoseStartTime < 0.08) return;
+        self.pointingPoseActive = YES;
+    }
 
     // EDGE-TO-EDGE MAPPING LOGIC. The camera center is 0.5; gain stretches
     // the reachable area while clamping keeps the pointer on-screen.
@@ -548,10 +576,9 @@ static int FindVitureProductID() {
     self.pinchStartTime = 0.0;
     self.pinchLockoutUntil = 0.0;
     self.dragActive = NO;
-    self.scrollActive = NO;
-    self.scrollStartTime = 0.0;
-    self.hasScrollPoint = NO;
-    self.scrollRemainder = 0.0;
+    self.scrollInterpreter->Reset();
+    self.pointingPoseStartTime = 0.0;
+    self.pointingPoseActive = NO;
     self.lastHandSeenTime = 0.0;
     self.hasFirstPos = NO;
 }
