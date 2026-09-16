@@ -7,6 +7,7 @@
 #import <IOKit/IOKitLib.h>
 #import <IOKit/usb/IOUSBLib.h>
 #include <atomic>
+#include <mutex>
 #include "viture_device_carina.h"
 #include "GestureEngine.h"
 #include "Preferences.h"
@@ -17,6 +18,7 @@ static HandTracker *g_tracker = nil;
 static std::atomic<int> g_engineStatus{0};
 static std::atomic<int> g_carinaCallbacks{0};
 static std::atomic<bool> g_trackingEnabled{true};
+static std::mutex g_eventMutex;
 
 enum {
     kPinchIdle = 0,
@@ -154,6 +156,7 @@ static int FindVitureProductID() {
 @property (nonatomic, assign) BOOL dragActive;
 @property (nonatomic, assign) CFAbsoluteTime lastHandSeenTime;
 @property (nonatomic, assign) ScrollInterpreter *scrollInterpreter;
+@property (nonatomic, assign) CGEventSourceRef eventSource;
 @property (nonatomic, assign) CFAbsoluteTime pointingPoseStartTime;
 @property (nonatomic, assign) BOOL pointingPoseActive;
 @end
@@ -177,6 +180,7 @@ static int FindVitureProductID() {
         _dragActive = NO;
         _lastHandSeenTime = 0.0;
         _scrollInterpreter = new ScrollInterpreter();
+        _eventSource = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
         _pointingPoseStartTime = 0.0;
         _pointingPoseActive = NO;
         _screenSize = CGDisplayBounds(CGMainDisplayID()).size;
@@ -186,6 +190,7 @@ static int FindVitureProductID() {
 
 - (void)dealloc {
     delete _scrollInterpreter;
+    if (_eventSource) CFRelease(_eventSource);
 }
 
 - (void)start {
@@ -363,14 +368,13 @@ static int FindVitureProductID() {
 }
 
 - (void)postMouseEvent:(CGEventType)type at:(CGPoint)point {
-    CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
-    if (!source) return;
-    CGEventRef event = CGEventCreateMouseEvent(source, type, point, kCGMouseButtonLeft);
+    std::lock_guard<std::mutex> lock(g_eventMutex);
+    if (!self.eventSource) return;
+    CGEventRef event = CGEventCreateMouseEvent(self.eventSource, type, point, kCGMouseButtonLeft);
     if (event) {
         CGEventPost(kCGHIDEventTap, event);
         CFRelease(event);
     }
-    CFRelease(source);
 }
 
 - (void)postClickAt:(CGPoint)point {
@@ -380,9 +384,9 @@ static int FindVitureProductID() {
 
 - (void)postScrollLines:(int)lines {
     if (lines == 0) return;
-    CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
-    if (!source) return;
-    CGEventRef scroll = CGEventCreateScrollWheelEvent(source,
+    std::lock_guard<std::mutex> lock(g_eventMutex);
+    if (!self.eventSource) return;
+    CGEventRef scroll = CGEventCreateScrollWheelEvent(self.eventSource,
                                                        kCGScrollEventUnitLine,
                                                        1,
                                                        lines);
@@ -390,7 +394,6 @@ static int FindVitureProductID() {
         CGEventPost(kCGHIDEventTap, scroll);
         CFRelease(scroll);
     }
-    CFRelease(source);
 }
 
 - (void)processHand:(VNHumanHandPoseObservation *)hand {
@@ -572,14 +575,8 @@ static int FindVitureProductID() {
     }
     self.lastMousePos = smoothedPos;
 
-    CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
-    if (src) {
-        CGEventType type = self.dragActive ? kCGEventLeftMouseDragged : kCGEventMouseMoved;
-        CGEventRef move = CGEventCreateMouseEvent(src, type, smoothedPos, kCGMouseButtonLeft);
-        CGEventPost(kCGHIDEventTap, move);
-        CFRelease(move);
-        CFRelease(src);
-    }
+    CGEventType type = self.dragActive ? kCGEventLeftMouseDragged : kCGEventMouseMoved;
+    [self postMouseEvent:type at:smoothedPos];
 }
 
 - (void)resetInteraction {
