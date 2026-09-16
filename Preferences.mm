@@ -141,6 +141,13 @@ static void WriteSettings(NSUserDefaults *defaults, GestureSettings settings) {
     [defaults setBool:settings.scrollClutchEnabled forKey:kScrollClutchEnabledKey];
 }
 
+static id PersistentObjectForKey(NSUserDefaults *defaults, NSString *key) {
+    NSString *domainName = [[NSBundle mainBundle] bundleIdentifier];
+    if (!domainName) return nil;
+    NSDictionary *persistentDomain = [defaults persistentDomainForName:domainName];
+    return persistentDomain[key];
+}
+
 void LoadGestureSettings() {
     @autoreleasepool {
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
@@ -149,11 +156,12 @@ void LoadGestureSettings() {
         // Versions before the cursor regression registered these as 0.003 and
         // 220. Reset only those old untouched defaults once; preserve any
         // deliberately customized values.
-        double savedDeadzone = [defaults doubleForKey:kCursorDeadzoneKey];
-        double savedMaxStep = [defaults doubleForKey:kCursorMaxStepKey];
+        double savedDeadzone = [PersistentObjectForKey(defaults, kCursorDeadzoneKey) doubleValue];
+        double savedMaxStep = [PersistentObjectForKey(defaults, kCursorMaxStepKey) doubleValue];
         if (fabs(savedDeadzone - 0.003) < 0.0001 && fabs(savedMaxStep - 220.0) < 0.1) {
             [defaults setDouble:0.0 forKey:kCursorDeadzoneKey];
             [defaults setDouble:0.0 forKey:kCursorMaxStepKey];
+            [defaults synchronize];
         }
         GestureSettings loaded = ReadSettings(defaults);
         std::lock_guard<std::mutex> lock(g_settingsMutex);
@@ -183,6 +191,7 @@ void SaveGestureSettings(const GestureSettings &settings) {
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
         RegisterDefaults(defaults);
         WriteSettings(defaults, normalized);
+        [defaults synchronize];
     }
 }
 
