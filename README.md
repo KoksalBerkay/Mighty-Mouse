@@ -1,179 +1,189 @@
 # Mighty Mouse 🖱️🕶️
 
-**Mighty Mouse** is a macOS menu-bar utility that uses Apple Vision hand tracking to control the cursor with VITURE glasses cameras. It supports the VITURE Luma Ultra tracking-camera SDK when available and falls back to the glasses' external USB camera when SpaceWalker owns the tracking interface.
+Mighty Mouse is a macOS menu-bar utility that turns hand movements captured by
+VITURE glasses into cursor, click, drag, and scroll input. It uses Apple Vision
+for hand-pose detection and can run beside SpaceWalker without trying to take
+over its head-tracking controls.
 
-By utilizing a relative displacement strategy, this tool anchors your hand interactions to the virtual world while SpaceWalker handles the head-tracking, providing a seamless "spatial" interaction experience without hardware resource conflicts.
+This repository is a maintained fork of
+[fankahou/Mighty-Mouse](https://github.com/fankahou/Mighty-Mouse). The fork
+keeps the original attribution and adds a fuller menu-bar application,
+persistent settings, more stable gesture handling, and a safer optional SDK
+setup flow.
 
-## Maintained fork
+## ✨ What it does
 
-This repository is a maintained fork of [fankahou/Mighty-Mouse](https://github.com/fankahou/Mighty-Mouse). It keeps the original project and attribution while adding a more complete menu-bar application experience and ongoing gesture usability improvements.
+- **Point:** Raise only your index finger and move your hand to move the
+  cursor.
+- **Click:** Pinch your thumb and index finger together, then release. The app
+  clicks at the cursor position captured when the pinch began.
+- **Drag:** Hold the pinch past the drag threshold and move your hand. Release
+  the pinch to finish dragging.
+- **Scroll:** Raise your index and middle fingers, curl the other fingers, and
+  move the pair vertically. Rotated and diagonal hand poses are supported.
+- **Scroll reposition:** Pinch while scrolling to pause output while you move
+  your hand to a new position. Return to the two-finger pose to set a new
+  baseline.
+- **Pause:** Pause gesture output from the menu bar whenever you need normal
+  mouse control.
 
-Notable additions in this fork include:
+## 🧭 How it works
 
-- Persistent menu-bar controls for cursor, pinch, drag, and scroll behavior.
-- A stable menu-bar launcher, pause control, privacy-settings shortcut, and quit action.
-- Improved pinch-to-click and drag interaction with release-based clicking and cursor anchoring.
-- Angle-tolerant two-finger scrolling with scroll clutching, smoothing, acceleration, and direction controls.
-- Continuous index/middle-finger pose scoring with hysteresis so Vision jitter is less likely to cancel scrolling or stall ordinary pointing.
-- Deterministic tests for gesture geometry, cursor motion, scroll interpretation, and pose classification.
+1. Mighty Mouse asks macOS for camera frames and uses Apple Vision to locate
+   hand landmarks.
+2. The gesture interpreter classifies pointing, pinching, dragging, and
+   two-finger scrolling with stabilization and hysteresis to reduce accidental
+   state changes caused by camera jitter.
+3. Relative hand movement becomes CoreGraphics mouse and scroll events. The
+   relative mapping lets SpaceWalker continue handling the spatial display and
+   head tracking.
+4. When the optional VITURE SDK is installed, Mighty Mouse first tries the
+   Luma Ultra tracking-camera path. If SpaceWalker owns that interface or the
+   SDK is unavailable, it falls back to the glasses' external USB camera.
 
-The maintained fork is published at `https://github.com/KoksalBerkay/Mighty-Mouse`.
+## 📌 Current status
 
----
+- macOS on Apple Silicon (`arm64`).
+- Designed for VITURE glasses and the SpaceWalker workflow.
+- Builds locally from source with Apple Clang.
+- The repository does not contain a prebuilt app or VITURE SDK files.
+- Public releases contain source only. A signed and notarized downloadable app
+  is still future work.
 
-## ✨ Features
+## 🧰 Requirements
 
-- **Apple Vision Integration:** Leverages the native Vision framework for robust hand pose detection.
-- **SpaceWalker Awareness:** The menu bar status reports when SpaceWalker is preventing access to the Luma Ultra tracking camera.
-- **Natural Interaction:**
-  - **Point:** Move the system cursor by moving your hand.
-  - **Pinch:** A short, stabilized index-to-thumb pinch clicks without moving the cursor.
-  - **Drag:** Hold the pinch and intentionally move after the hold threshold.
-  - **Scroll:** Extend the index and middle fingers while curling the ring and little fingers, then move vertically.
-- **Safe Control:** Pause or resume gesture output from the menu bar without quitting the app.
-- **Comfort Controls:** Adjust cursor response, pinch stabilization, drag thresholds, and scroll behavior from the menu bar.
-- **Persistent Preferences:** Settings are saved automatically and can be restored to recommended defaults at any time.
-- **Silicon Optimized:** Native `arm64` support for M1, M2, and M3 Macs.
-- **Clean Console:** Automatically suppresses framework-level warnings for a focused developer experience.
+### 🕶️ Hardware
 
----
+- Apple Silicon Mac (M1 or newer).
+- VITURE glasses with an available camera feed.
+- The optional VITURE SDK if you want to use the dedicated Luma Ultra
+  tracking-camera path.
 
-## 🛠️ Prerequisites
+### 🔐 macOS permissions
 
-### Hardware
-- **VITURE Luma Ultra** glasses for the dedicated stereo tracking-camera path.
-- **Apple Silicon Mac** (M1 or newer).
+Grant these permissions in **System Settings > Privacy & Security**:
 
-### Permissions
-To function, macOS requires you to grant the following permissions in **System Settings > Privacy & Security**:
-1. **Camera:** To access the glasses' sensor feed.
-2. **Accessibility:** To allow the app to post mouse events and control the cursor.
-3. **Input Monitoring:** To track gestures while the app is in the background.
+1. **Camera**, so Mighty Mouse can read the glasses' camera feed.
+2. **Accessibility**, so it can post mouse events and control the cursor.
+3. **Input Monitoring**, so gesture tracking can continue while the app is in
+   the background.
 
----
+## 🚀 Install and run
 
-## 🎮 Gesture Guide
+### 1. 📥 Clone the repository
 
-- **Move:** Hold up only your index finger and move it naturally.
-- **Click:** Bring thumb and index together, wait for the pinch to arm, then release. Mighty Mouse sends the click at the frozen cursor position, so the release does not need to be precisely timed.
-- **Drag:** Keep the pinch held beyond the drag hold duration and move deliberately past the movement threshold. Release the pinch to stop dragging.
-- **Scroll:** Hold index and middle fingers up with ring and little fingers curled; wait for the short activation dwell, then move the two-finger pair vertically. The pose accepts rotated or diagonal hands. Finger geometry is scored continuously, so small Vision jitters no longer immediately cancel scrolling or send cursor movement instead.
-- **Scroll reposition:** While scrolling, pinch to engage the clutch. Move your hand to a new position without generating reverse scrolling, then return to the two-finger pose to establish a fresh baseline.
-- **Pause:** Choose **Pause Tracking** from the hand-icon menu when you need normal mouse control.
-
-## ⚙️ Comfort Settings
-
-Open the hand-icon menu in the macOS menu bar. **Quick Settings** provides one-click presets for cursor sensitivity, cursor response, scroll speed, and scroll direction. Choose **Open Settings…** for fine control over:
-
-- Cursor sensitivity and response smoothing.
-- Cursor movement deadzone and maximum movement step.
-- Pinch sensitivity and stabilization delay.
-- Drag hold duration and movement threshold.
-- Scroll speed, acceleration, smoothing, activation delay, and noise filter.
-- Scroll clutch enable/disable.
-- Two-finger pose sensitivity: Easy accepts more borderline finger shapes; Strict requires a clearer index-and-middle pose. Strict is the default.
-- Natural or reversed scroll direction.
-
-Every change applies immediately and is saved automatically for the next launch. New installations default to **Responsive** cursor response, **Very Fast** scroll speed, and **Strict** two-finger pose sensitivity. Choose **Restore Default Settings** from either the menu or the settings window to return to those defaults.
-
-For development, `make test` runs deterministic scroll-state and rotated-finger geometry tests before packaging the app.
-
-## 🚀 Installation & Build
-
-### 1. Clone the Repository
 ```bash
 git clone https://github.com/KoksalBerkay/Mighty-Mouse.git
 cd Mighty-Mouse
 ```
 
-### 2. Set Up the Optional VITURE SDK
+### 2. ✅ Run the tests
 
-The VITURE SDK is not included in this repository. Download it directly from
-VITURE, then launch Mighty Mouse and choose **SDK not installed — Set Up
-SDK…** from the menu-bar hand icon. Select the downloaded `.zip`, `.tar.gz`,
-or `.tgz` archive (an extracted SDK folder is also accepted).
-
-Mighty Mouse validates that the archive contains the required arm64 dynamic
-libraries and installs only those libraries at:
-
-```text
-~/Library/Application Support/Mighty Mouse/VITURE SDK/
-```
-
-The original SDK download is never modified or deleted. If the SDK is not
-installed, Mighty Mouse continues to offer the external USB-camera fallback.
-The same setup menu provides an uninstaller that removes only that exact
-app-owned directory and, if selected, Mighty Mouse's own preferences.
-
-The SDK is obtained and used under VITURE's terms. See the [VITURE SDK
-License Agreement](https://www.viture.com/viture-sdk-license-agreement).
-
-### 3. Run the tests
-
-Before building the app, run the deterministic gesture tests:
+The test target covers gesture geometry, cursor motion, scroll interpretation,
+pose classification, and the default Quick Settings values.
 
 ```bash
 make test
 ```
 
-### 4. Build the executable
-
-Use the provided Makefile to compile the native Apple Silicon executable:
-
-```bash
-make build
-```
-
-For development, `make run` builds and launches the executable directly from
-the repository. It runs as a regular process and does not create the menu-bar
-app bundle.
-
-### 5. Build the menu-bar app
-
-To create the launchable menu-bar application bundle, use:
+### 3. 🛠️ Build the menu-bar app
 
 ```bash
 make sign-app
 open "Mighty Mouse.app"
 ```
 
-`make sign-app` creates the ignored `Mighty Mouse.app` bundle, copies the
-executable into it, applies the local bundle identifier
-`com.koksalberkay.mightymouse`, and ad-hoc signs it for local use. On the
-first launch of this fork, grant Camera and Accessibility permissions to the
-new app identity. The menu-bar hand icon provides SDK setup/uninstall, pause,
-settings, privacy, and quit controls.
+`make sign-app` creates an ignored app bundle in the repository, copies in the
+native executable, and ad-hoc signs it for local use. On first launch, grant
+the required macOS permissions to this app identity.
 
-For a local install outside the repository:
+For development, `make build` creates the executable and `make run` launches
+it directly without creating an app bundle.
+
+### 4. 📦 Optional: set up the VITURE SDK
+
+Mighty Mouse does not host, redistribute, or link against the VITURE SDK at
+build time. Download the SDK directly from VITURE, then open the menu-bar hand
+icon and choose **SDK not installed — Set Up SDK…**. Select the downloaded
+`.zip`, `.tar.gz`, or `.tgz` archive. An extracted SDK folder is also accepted.
+
+The setup utility validates the archive and copies only the required arm64
+libraries into this app-owned directory:
+
+```text
+~/Library/Application Support/Mighty Mouse/VITURE SDK/
+```
+
+The original SDK archive or folder is never modified or deleted. If the SDK is
+not installed, the app continues to offer the external USB-camera fallback.
+The same menu provides an uninstaller that removes only Mighty Mouse's exact
+app-owned SDK directory and, optionally, Mighty Mouse's own preferences.
+
+The SDK is obtained and used under VITURE's terms. Read the
+[VITURE SDK License Agreement](https://www.viture.com/viture-sdk-license-agreement)
+before installing it.
+
+### 5. 📁 Install outside the repository (optional)
+
+For a local app installation under your user account:
 
 ```bash
+mkdir -p "$HOME/Applications"
 ditto "Mighty Mouse.app" "$HOME/Applications/Mighty Mouse.app"
 open -a "$HOME/Applications/Mighty Mouse.app"
 ```
 
 Ad-hoc signing is intended for local development. A public downloadable app
-should be signed with an Apple Developer ID certificate and notarized.
----
+will need an Apple Developer ID signature and notarization.
 
-### Part 3: Structure and License
+## 🖐️ Menu-bar controls
 
----
+The hand icon provides:
 
-## 📂 Project Structure
+- Camera and cursor-permission status.
+- SDK setup, validation, and uninstall.
+- Pause and resume tracking.
+- Quick Settings for common adjustments.
+- Fine-grained settings for cursor, pinch, drag, and scroll behavior.
+- Shortcuts to the relevant macOS privacy settings.
 
-- `main.mm`: App lifecycle and environment setup.
-- `GestureEngine.mm`: Core hand tracking logic, coordinate mapping, and mouse event injection.
-- `VitureSDKManager.mm`: Local SDK validation, installation, uninstallation, and runtime loading.
-- `VitureSDKManager.h`: Application-owned runtime ABI declarations for the small SDK surface used by Mighty Mouse.
-- `Makefile`: Optimized build instructions for Apple Clang.
+New installations and **Restore Default Settings** use these Quick Settings
+defaults:
 
----
+| Menu choice | Default |
+| --- | --- |
+| Cursor Response | Responsive |
+| Scroll Speed | Very Fast |
+| Two-Finger Pose | Strict |
 
-## ⚖️ License
+Settings apply immediately and are saved for the next launch. Existing custom
+preferences are preserved until you change them or choose **Restore Default
+Settings**.
 
-Distributed under the **MIT License**. See `LICENSE` for more information.
+## 🗂️ Project structure
 
----
+- `main.mm`: App lifecycle, menu-bar controls, settings window, and SDK setup
+  actions.
+- `GestureEngine.mm`: Camera selection, Vision frame processing, coordinate
+  mapping, and mouse-event injection.
+- `GestureInterpreter.cpp`: Gesture state transitions and stabilization.
+- `GestureGeometry.cpp`: Finger-pose geometry and scoring.
+- `CursorMotion.cpp`: Relative cursor movement and filtering.
+- `VitureSDKManager.mm`: SDK validation, local installation, uninstallation,
+  and runtime loading.
+- `Preferences.mm`: Persistent gesture settings and default values.
+- `Makefile`: Test, build, app-bundle, and local-signing commands.
 
-## ⚠️ Disclaimer
-This is an independent community project and is not an official VITURE product. Use at your own risk. Always ensure you are in a safe environment when using AR hand-tracking.
+The VITURE SDK headers and dynamic libraries are intentionally absent from the
+repository and app bundle. The app declares only the small runtime ABI it uses
+and resolves the SDK symbols after installation.
+
+## 📄 License
+
+Mighty Mouse's source code is distributed under the [MIT License](LICENSE).
+The VITURE SDK is separate third-party software and is not covered by this
+repository's license.
+
+Mighty Mouse is an independent community project and is not an official VITURE
+product. Use it at your own risk, and make sure you can safely see and control
+your environment while using hand-tracking input.
