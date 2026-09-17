@@ -1,9 +1,9 @@
 
 APP_BUNDLE := Mighty Mouse.app
-APP_ID := com.fankahou.mightymouse
+APP_ID := com.koksalberkay.mightymouse
 SIGNING_REQUIREMENT := /private/tmp/mighty_mouse.csreq
 
-.PHONY: all build run test sign-app
+.PHONY: all build run test prepare-app sign-app
 
 all: build
 
@@ -34,10 +34,16 @@ test:
 	clang++ GestureInterpreter.cpp GestureInterpreterTests.cpp GestureGeometry.cpp GestureGeometryTests.cpp CursorMotion.cpp CursorMotionTests.cpp -o work/gesture_interpreter_tests -arch arm64
 	./work/gesture_interpreter_tests
 
-# Sign the local bundle with a stable identifier requirement. Ad-hoc signing
-# without this override uses the executable cdhash, which makes macOS privacy
-# permissions appear to disappear after every rebuild.
-sign-app: build
+# Create the menu-bar app structure from the tracked bundle metadata. The
+# generated bundle is ignored so local builds never add app binaries to git.
+prepare-app:
+	mkdir -p '$(APP_BUNDLE)/Contents/MacOS' '$(APP_BUNDLE)/Contents/Frameworks'
+	cp Info.plist '$(APP_BUNDLE)/Contents/Info.plist'
+
+# Build and sign a launchable local menu-bar app. This is ad-hoc signed for
+# local use; public distribution should use a Developer ID certificate and
+# notarization.
+sign-app: build prepare-app
 	cp mighty_mouse '$(APP_BUNDLE)/Contents/MacOS/mighty_mouse'
 	install_name_tool -delete_rpath ./aarch64 -add_rpath '@executable_path/../Frameworks' '$(APP_BUNDLE)/Contents/MacOS/mighty_mouse'
 	csreq -r '=designated => identifier "$(APP_ID)"' -b '$(SIGNING_REQUIREMENT)'

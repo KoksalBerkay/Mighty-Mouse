@@ -94,15 +94,51 @@ Ensure your VITURE SDK binaries are located in the following structure:
 
 - `./aarch64/libglasses.dylib`
 
-### 3. Build and Run
+### 3. Run the tests
 
-Use the provided `Makefile` to compile the application:
+Before building the app, run the deterministic gesture tests:
 
 ```bash
-make
+make test
 ```
 
-Use `make run` when launching from the repository during development.
+### 4. Build the executable
+
+Use the provided Makefile to compile the native Apple Silicon executable:
+
+```bash
+make build
+```
+
+For development, `make run` builds and launches the executable directly from
+the repository. It runs as a regular process and does not create the menu-bar
+app bundle.
+
+### 5. Build the menu-bar app
+
+To create the launchable menu-bar application bundle, use:
+
+```bash
+make sign-app
+open "Mighty Mouse.app"
+```
+
+`make sign-app` creates the ignored `Mighty Mouse.app` bundle, copies the
+executable and SDK libraries into it, applies the local bundle identifier
+`com.koksalberkay.mightymouse`, and ad-hoc signs it for local use. On the
+first launch of this fork, grant Camera and Accessibility permissions to the
+new app identity. The menu-bar hand icon provides pause, settings, privacy,
+and quit controls.
+
+For a local install outside the repository:
+
+```bash
+ditto "Mighty Mouse.app" "$HOME/Applications/Mighty Mouse.app"
+open -a "$HOME/Applications/Mighty Mouse.app"
+```
+
+Ad-hoc signing is intended for local development. A public downloadable app
+should be signed with an Apple Developer ID certificate and notarized.
 ---
 
 ### Part 3: Structure and License
