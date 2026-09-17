@@ -14,6 +14,7 @@
 
 #include "GestureEngine.h"
 #include "Preferences.h"
+#include "VitureSDKManager.h"
 
 static BOOL AccessibilityPermissionGranted() {
     return AXIsProcessTrusted();
@@ -50,6 +51,7 @@ enum {
 @property (nonatomic, strong) NSStatusItem *statusItem;
 @property (nonatomic, strong) NSMenuItem *cameraStatusItem;
 @property (nonatomic, strong) NSMenuItem *inputStatusItem;
+@property (nonatomic, strong) NSMenuItem *sdkStatusItem;
 @property (nonatomic, strong) NSMenuItem *trackingToggleItem;
 @property (nonatomic, strong) NSWindow *settingsWindow;
 @property (nonatomic, strong) NSSlider *cursorGainSlider;
@@ -81,6 +83,12 @@ enum {
 @implementation MightyMouseAppDelegate
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
+    NSError *sdkStatusError = nil;
+    [[VitureSDKManager sharedManager] refreshInstallationStatus:&sdkStatusError];
+    if (sdkStatusError) {
+        NSLog(@"Mighty Mouse: %@", sdkStatusError.localizedDescription);
+    }
+
     self.statusItem = [[NSStatusBar systemStatusBar]
         statusItemWithLength:NSVariableStatusItemLength];
 
@@ -115,6 +123,13 @@ enum {
         keyEquivalent:@""];
     self.inputStatusItem.enabled = NO;
     [menu addItem:self.inputStatusItem];
+
+    self.sdkStatusItem = [[NSMenuItem alloc]
+        initWithTitle:@"SDK checking…"
+                action:@selector(setupSDK:)
+         keyEquivalent:@""];
+    self.sdkStatusItem.target = self;
+    [menu addItem:self.sdkStatusItem];
 
     [menu addItem:[NSMenuItem separatorItem]];
 
@@ -232,6 +247,8 @@ enum {
 }
 
 - (void)refreshStatus {
+    [self refreshSDKStatus];
+
     AVAuthorizationStatus cameraAuthorization =
         [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
     switch (cameraAuthorization) {
@@ -256,6 +273,30 @@ enum {
         ? @"Pause Tracking"
         : @"Resume Tracking";
     [self refreshQuickSettingsState];
+}
+
+- (void)refreshSDKStatus {
+    VitureSDKManager *manager = [VitureSDKManager sharedManager];
+    NSError *error = nil;
+    [manager refreshInstallationStatus:&error];
+
+    switch (manager.installationStatus) {
+        case MightyMouseVitureSDKStatusInstalled:
+            self.sdkStatusItem.title = manager.isSDKLoaded
+                ? @"SDK ready — Manage SDK…"
+                : @"SDK installed — Set Up SDK…";
+            break;
+        case MightyMouseVitureSDKStatusInvalid:
+            self.sdkStatusItem.title = @"SDK invalid — Set Up SDK…";
+            break;
+        case MightyMouseVitureSDKStatusNotInstalled:
+        default:
+            self.sdkStatusItem.title = @"SDK not installed — Set Up SDK…";
+            break;
+    }
+    if (error) {
+        NSLog(@"Mighty Mouse: SDK check: %@", error.localizedDescription);
+    }
 }
 
 - (void)refreshQuickSettingsState {
@@ -648,6 +689,96 @@ enum {
     [self refreshQuickSettingsState];
 }
 
+- (void)setupSDK:(id)sender {
+    VitureSDKManager *manager = [VitureSDKManager sharedManager];
+    NSError *statusError = nil;
+    [manager refreshInstallationStatus:&statusError];
+
+    NSAlert *instructions = [[NSAlert alloc] init];
+    instructions.alertStyle = NSAlertStyleInformational;
+    instructions.messageText = @"Mighty Mouse SDK Setup";
+    instructions.informativeText =
+        @"Download the VITURE SDK directly from VITURE, then choose the downloaded archive or an extracted SDK folder. Mighty Mouse validates the arm64 libraries and copies only the required files into its app-owned support directory. Your original download is left untouched.";
+    [instructions addButtonWithTitle:@"Choose SDK Archive…"];
+    BOOL hasInstalledDirectory = manager.installationStatus != MightyMouseVitureSDKStatusNotInstalled;
+    if (hasInstalledDirectory) [instructions addButtonWithTitle:@"Uninstall Installed SDK…"];
+    [instructions addButtonWithTitle:@"Cancel"];
+
+    NSModalResponse response = [instructions runModal];
+    if (response == NSAlertFirstButtonReturn) {
+        NSOpenPanel *panel = [NSOpenPanel openPanel];
+        panel.title = @"Choose the VITURE SDK archive or extracted folder";
+        panel.message = @"Select a .zip, .tar.gz, .tgz, or extracted SDK folder.";
+        panel.canChooseFiles = YES;
+        panel.canChooseDirectories = YES;
+        panel.allowsMultipleSelection = NO;
+        panel.allowsOtherFileTypes = YES;
+        if ([panel runModal] != NSModalResponseOK || !panel.URL) return;
+
+        [self installSDKFromURL:panel.URL];
+    } else if (hasInstalledDirectory && response == NSAlertSecondButtonReturn) {
+        [self uninstallSDK:sender];
+    }
+}
+
+- (void)installSDKFromURL:(NSURL *)sourceURL {
+    VitureSDKManager *manager = [VitureSDKManager sharedManager];
+    StopGestureEngine();
+    [manager unloadSDK];
+
+    NSError *error = nil;
+    BOOL installed = [manager installFromURL:sourceURL error:&error];
+    if (installed) {
+        NSError *loadError = nil;
+        installed = [manager loadSDK:&loadError];
+        if (!installed) error = loadError;
+    }
+
+    StartGestureEngine();
+    [self refreshStatus];
+
+    NSAlert *result = [[NSAlert alloc] init];
+    result.alertStyle = installed ? NSAlertStyleInformational : NSAlertStyleCritical;
+    result.messageText = installed ? @"VITURE SDK installed" : @"VITURE SDK setup failed";
+    result.informativeText = installed
+        ? @"Mighty Mouse can now use the Luma Ultra tracking-camera path."
+        : (error.localizedDescription ?: @"The selected SDK could not be installed.");
+    [result addButtonWithTitle:@"OK"];
+    [result runModal];
+}
+
+- (void)uninstallSDK:(id)sender {
+    NSButton *removePreferences = [NSButton checkboxWithTitle:
+        @"Also remove Mighty Mouse preferences" target:nil action:nil];
+    NSAlert *confirmation = [[NSAlert alloc] init];
+    confirmation.alertStyle = NSAlertStyleWarning;
+    confirmation.messageText = @"Uninstall the VITURE SDK?";
+    confirmation.informativeText =
+        @"This removes only Mighty Mouse's installed SDK directory. The original VITURE SDK archive or folder will not be deleted.";
+    confirmation.accessoryView = removePreferences;
+    [confirmation addButtonWithTitle:@"Uninstall SDK"];
+    [confirmation addButtonWithTitle:@"Cancel"];
+    if ([confirmation runModal] != NSAlertFirstButtonReturn) return;
+
+    VitureSDKManager *manager = [VitureSDKManager sharedManager];
+    StopGestureEngine();
+    [manager unloadSDK];
+    NSError *error = nil;
+    BOOL removed = [manager uninstallIncludingPreferences:
+        removePreferences.state == NSControlStateValueOn error:&error];
+    StartGestureEngine();
+    [self refreshStatus];
+
+    NSAlert *result = [[NSAlert alloc] init];
+    result.alertStyle = removed ? NSAlertStyleInformational : NSAlertStyleCritical;
+    result.messageText = removed ? @"VITURE SDK uninstalled" : @"VITURE SDK uninstall failed";
+    result.informativeText = removed
+        ? @"The original SDK download was not changed."
+        : (error.localizedDescription ?: @"The installed SDK could not be removed.");
+    [result addButtonWithTitle:@"OK"];
+    [result runModal];
+}
+
 - (void)openSettings:(id)sender {
     if (!self.settingsWindow) [self buildSettingsWindow];
     [self refreshSettingsControls];
@@ -713,6 +844,7 @@ int main() {
         [app run];
 
         StopGestureEngine();
+        [[VitureSDKManager sharedManager] unloadSDK];
     }
 
     return 0;

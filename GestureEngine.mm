@@ -8,12 +8,12 @@
 #import <IOKit/usb/IOUSBLib.h>
 #include <atomic>
 #include <mutex>
-#include "viture_device_carina.h"
 #include "GestureEngine.h"
 #include "Preferences.h"
 #include "GestureInterpreter.h"
 #include "GestureGeometry.h"
 #include "CursorMotion.h"
+#include "VitureSDKManager.h"
 
 @class HandTracker;
 static HandTracker *g_tracker = nil;
@@ -121,7 +121,7 @@ static int FindVitureProductID() {
 @property (nonatomic, assign) CGSize screenSize;
 @property (nonatomic, assign) CGPoint lastMousePos;
 @property (nonatomic, assign) BOOL hasFirstPos;
-@property (nonatomic, assign) XRDeviceProviderHandle carinaHandle;
+@property (nonatomic, assign) MightyMouseVitureProviderHandle carinaHandle;
 @property (nonatomic, assign) BOOL usingCarina;
 @property (nonatomic, assign) NSInteger pinchState;
 @property (nonatomic, assign) CFAbsoluteTime pinchStartTime;
@@ -195,28 +195,41 @@ static int FindVitureProductID() {
         return NO;
     }
 
-    XRDeviceProviderHandle handle = xr_device_provider_create(productID);
-    if (!handle || xr_device_provider_get_device_type(handle) != XR_DEVICE_TYPE_VITURE_CARINA) {
-        if (handle) xr_device_provider_destroy(handle);
+    NSError *sdkError = nil;
+    VitureSDKManager *sdkManager = [VitureSDKManager sharedManager];
+    if (![sdkManager loadSDK:&sdkError]) {
+        NSLog(@"Mighty Mouse: Luma Ultra SDK is unavailable: %@",
+              sdkError.localizedDescription ?: @"unknown error");
+        return NO;
+    }
+    const MightyMouseVitureSDKAPI *sdk = sdkManager.loadedAPI;
+    if (!sdk) {
+        NSLog(@"Mighty Mouse: Luma Ultra SDK did not expose a usable API.");
         return NO;
     }
 
-    int callbackResult = xr_device_provider_register_callbacks_carina(handle,
-                                                                       NULL,
-                                                                       NULL,
-                                                                       NULL,
-                                                                       CarinaCameraCallback);
+    MightyMouseVitureProviderHandle handle = sdk->create(productID);
+    if (!handle || sdk->getDeviceType(handle) != kMightyMouseVitureCarinaDeviceType) {
+        if (handle) sdk->destroy(handle);
+        return NO;
+    }
+
+    int callbackResult = sdk->registerCarinaCallbacks(handle,
+                                                       NULL,
+                                                       NULL,
+                                                       NULL,
+                                                       CarinaCameraCallback);
     g_carinaCallbacks.store(0);
     int initializeResult = callbackResult == 0
-        ? xr_device_provider_initialize(handle, NULL, NULL)
+        ? sdk->initialize(handle, NULL, NULL)
         : callbackResult;
     int startResult = initializeResult == 0
-        ? xr_device_provider_start(handle)
+        ? sdk->start(handle)
         : initializeResult;
     if (startResult != 0) {
         NSLog(@"Mighty Mouse: Luma Ultra tracking camera unavailable (SDK result %d).", startResult);
-        if (initializeResult == 0) xr_device_provider_shutdown(handle);
-        xr_device_provider_destroy(handle);
+        if (initializeResult == 0) sdk->shutdown(handle);
+        sdk->destroy(handle);
         return NO;
     }
 
@@ -241,9 +254,12 @@ static int FindVitureProductID() {
 
 - (void)stopCarina {
     if (self.carinaHandle) {
-        xr_device_provider_stop(self.carinaHandle);
-        xr_device_provider_shutdown(self.carinaHandle);
-        xr_device_provider_destroy(self.carinaHandle);
+        const MightyMouseVitureSDKAPI *sdk = MightyMouseVitureLoadedAPI();
+        if (sdk) {
+            sdk->stop(self.carinaHandle);
+            sdk->shutdown(self.carinaHandle);
+            sdk->destroy(self.carinaHandle);
+        }
         self.carinaHandle = NULL;
     }
     self.usingCarina = NO;

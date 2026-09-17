@@ -86,13 +86,27 @@ git clone https://github.com/KoksalBerkay/Mighty-Mouse.git
 cd Mighty-Mouse
 ```
 
-### 2. Add SDK Libraries
+### 2. Set Up the Optional VITURE SDK
 
-Ensure your VITURE SDK binaries are located in the following structure:
+The VITURE SDK is not included in this repository. Download it directly from
+VITURE, then launch Mighty Mouse and choose **SDK not installed — Set Up
+SDK…** from the menu-bar hand icon. Select the downloaded `.zip`, `.tar.gz`,
+or `.tgz` archive (an extracted SDK folder is also accepted).
 
-- `./aarch64/libcarina_vio.dylib`
+Mighty Mouse validates that the archive contains the required arm64 dynamic
+libraries and installs only those libraries at:
 
-- `./aarch64/libglasses.dylib`
+```text
+~/Library/Application Support/Mighty Mouse/VITURE SDK/
+```
+
+The original SDK download is never modified or deleted. If the SDK is not
+installed, Mighty Mouse continues to offer the external USB-camera fallback.
+The same setup menu provides an uninstaller that removes only that exact
+app-owned directory and, if selected, Mighty Mouse's own preferences.
+
+The SDK is obtained and used under VITURE's terms. See the [VITURE SDK
+License Agreement](https://www.viture.com/viture-sdk-license-agreement).
 
 ### 3. Run the tests
 
@@ -124,11 +138,11 @@ open "Mighty Mouse.app"
 ```
 
 `make sign-app` creates the ignored `Mighty Mouse.app` bundle, copies the
-executable and SDK libraries into it, applies the local bundle identifier
+executable into it, applies the local bundle identifier
 `com.koksalberkay.mightymouse`, and ad-hoc signs it for local use. On the
 first launch of this fork, grant Camera and Accessibility permissions to the
-new app identity. The menu-bar hand icon provides pause, settings, privacy,
-and quit controls.
+new app identity. The menu-bar hand icon provides SDK setup/uninstall, pause,
+settings, privacy, and quit controls.
 
 For a local install outside the repository:
 
@@ -149,8 +163,8 @@ should be signed with an Apple Developer ID certificate and notarized.
 
 - `main.mm`: App lifecycle and environment setup.
 - `GestureEngine.mm`: Core hand tracking logic, coordinate mapping, and mouse event injection.
-- `include/`: SDK headers for VITURE hardware.
-- `aarch64/`: ARM64 dynamic libraries.
+- `VitureSDKManager.mm`: Local SDK validation, installation, uninstallation, and runtime loading.
+- `VitureSDKManager.h`: Application-owned runtime ABI declarations for the small SDK surface used by Mighty Mouse.
 - `Makefile`: Optimized build instructions for Apple Clang.
 
 ---
