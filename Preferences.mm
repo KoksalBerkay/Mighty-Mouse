@@ -31,7 +31,7 @@ static bool g_settingsLoaded = false;
 GestureSettings DefaultGestureSettings() {
     return GestureSettings{
         .cursorGain = 1.60,
-        .cursorSmoothing = 0.26,
+        .cursorSmoothing = 0.38,
         // Zero disables these optional guards. The prior cursor behavior was
         // direct and responsive; users can opt into extra filtering in the
         // settings window when their camera needs it.
@@ -42,14 +42,14 @@ GestureSettings DefaultGestureSettings() {
         .pinchActivationDelay = 0.10,
         .dragHoldDuration = 0.35,
         .dragMovementThreshold = 0.045,
-        .scrollSpeed = 1.00,
+        .scrollSpeed = 2.20,
         .scrollAcceleration = 0.15,
         .scrollSmoothing = 0.32,
         .scrollActivationDelay = 0.22,
         .scrollDeadzone = 0.012,
         .invertScroll = false,
         .scrollClutchEnabled = true,
-        .scrollPoseSensitivity = 0.50,
+        .scrollPoseSensitivity = 1.00,
     };
 }
 

@@ -29,6 +29,8 @@ test:
 	mkdir -p work
 	clang++ GestureInterpreter.cpp GestureInterpreterTests.cpp GestureGeometry.cpp GestureGeometryTests.cpp CursorMotion.cpp CursorMotionTests.cpp -o work/gesture_interpreter_tests -arch arm64
 	./work/gesture_interpreter_tests
+	clang++ Preferences.mm PreferencesTests.mm -o work/preferences_tests -fobjc-arc -framework Foundation -arch arm64
+	./work/preferences_tests
 
 # Create the menu-bar app structure from the tracked bundle metadata. The
 # generated bundle is ignored so local builds never add app binaries to git.

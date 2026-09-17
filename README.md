@@ -71,10 +71,10 @@ Open the hand-icon menu in the macOS menu bar. **Quick Settings** provides one-c
 - Drag hold duration and movement threshold.
 - Scroll speed, acceleration, smoothing, activation delay, and noise filter.
 - Scroll clutch enable/disable.
-- Two-finger pose sensitivity: Easy accepts more borderline finger shapes; Strict requires a clearer index-and-middle pose. Balanced is recommended.
+- Two-finger pose sensitivity: Easy accepts more borderline finger shapes; Strict requires a clearer index-and-middle pose. Strict is the default.
 - Natural or reversed scroll direction.
 
-Every change applies immediately and is saved automatically for the next launch. Choose **Restore Default Settings** from either the menu or the settings window to return to the recommended defaults.
+Every change applies immediately and is saved automatically for the next launch. New installations default to **Responsive** cursor response, **Very Fast** scroll speed, and **Strict** two-finger pose sensitivity. Choose **Restore Default Settings** from either the menu or the settings window to return to those defaults.
 
 For development, `make test` runs deterministic scroll-state and rotated-finger geometry tests before packaging the app.
 
