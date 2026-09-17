@@ -39,6 +39,8 @@ test:
 prepare-app:
 	mkdir -p '$(APP_BUNDLE)/Contents/MacOS' '$(APP_BUNDLE)/Contents/Frameworks'
 	cp Info.plist '$(APP_BUNDLE)/Contents/Info.plist'
+	cp ./aarch64/libcarina_vio.dylib '$(APP_BUNDLE)/Contents/Frameworks/libcarina_vio.dylib'
+	cp ./aarch64/libglasses.dylib '$(APP_BUNDLE)/Contents/Frameworks/libglasses.dylib'
 
 # Build and sign a launchable local menu-bar app. This is ad-hoc signed for
 # local use; public distribution should use a Developer ID certificate and
