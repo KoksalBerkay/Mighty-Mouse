@@ -4,6 +4,21 @@
 
 By utilizing a relative displacement strategy, this tool anchors your hand interactions to the virtual world while SpaceWalker handles the head-tracking, providing a seamless "spatial" interaction experience without hardware resource conflicts.
 
+## Maintained fork
+
+This repository is a maintained fork of [fankahou/Mighty-Mouse](https://github.com/fankahou/Mighty-Mouse). It keeps the original project and attribution while adding a more complete menu-bar application experience and ongoing gesture usability improvements.
+
+Notable additions in this fork include:
+
+- Persistent menu-bar controls for cursor, pinch, drag, and scroll behavior.
+- A stable menu-bar launcher, pause control, privacy-settings shortcut, and quit action.
+- Improved pinch-to-click and drag interaction with release-based clicking and cursor anchoring.
+- Angle-tolerant two-finger scrolling with scroll clutching, smoothing, acceleration, and direction controls.
+- Continuous index/middle-finger pose scoring with hysteresis so Vision jitter is less likely to cancel scrolling or stall ordinary pointing.
+- Deterministic tests for gesture geometry, cursor motion, scroll interpretation, and pose classification.
+
+The maintained fork is published at `https://github.com/KoksalBerkay/Mighty-Mouse`.
+
 ---
 
 ## ✨ Features
@@ -67,8 +82,8 @@ For development, `make test` runs deterministic scroll-state and rotated-finger 
 
 ### 1. Clone the Repository
 ```bash
-git clone [https://github.com/yourusername/mighty-mouse.git](https://github.com/yourusername/mighty-mouse.git)
-cd mighty-mouse
+git clone https://github.com/KoksalBerkay/Mighty-Mouse.git
+cd Mighty-Mouse
 ```
 
 ### 2. Add SDK Libraries
